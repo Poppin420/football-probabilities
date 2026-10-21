@@ -7,7 +7,8 @@
 # Phase 3 also back-tests the Elo-only formula of the Champions League on the
 # domestic matches of all leagues (the cup has too few matches of its own).
 # Its warnings never fail the run; only a league below the 8 % RPS limit does.
-# It needs no secrets: it only downloads public CSV and ClubElo files.
+# It needs no secrets: it only downloads public CSV files (the Elo ratings are computed from them; ClubElo is
+# contacted only for an optional comparison).
 name: Εβδομαδιαίος έλεγχος αξιοπιστίας
 
 on:
@@ -55,6 +56,8 @@ jobs:
         id: tune
         continue-on-error: true
         run: node scripts/tune.mjs
+        env:
+          ELO_SOURCE: ${{ vars.ELO_SOURCE }} # optional repository variable: empty = our own Elo (default), "clubelo" = the downloaded ClubElo ratings
 
       - name: Σύνοψη αποτελέσματος
         if: ${{ hashFiles('data-out/report.json') != '' }}
