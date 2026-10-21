@@ -1,0 +1,68 @@
+# Manual check of every data source. Run it FIRST (and again whenever a league
+# looks wrong): it makes real requests, checks the fields the code relies on and
+# lists team names that could not be matched. The result is shown at the bottom
+# of the run page ("Summary"). Nothing is published and no file is changed.
+name: Έλεγχος πηγών
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Έλεγχος πηγών και ονομάτων ομάδων
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Εγκατάσταση Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Έλεγχος πηγών
+        id: sources
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/check-sources.mjs 2>&1 | tee check-sources.txt
+
+      - name: Ονόματα ομάδων
+        id: aliases
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/build-aliases.mjs 2>&1 | tee build-aliases.txt
+
+      - name: Σύνοψη
+        if: ${{ always() }}
+        run: |
+          {
+            echo '## Έλεγχος πηγών'
+            echo
+            echo '```'
+            cat check-sources.txt 2>/dev/null || echo '(δεν εκτελέστηκε)'
+            echo '```'
+            echo
+            echo '## Ονόματα ομάδων'
+            echo
+            echo '```'
+            cat build-aliases.txt 2>/dev/null || echo '(δεν εκτελέστηκε)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Αποτέλεσμα
+        if: ${{ steps.sources.outcome == 'failure' || steps.aliases.outcome == 'failure' }}
+        run: |
+          echo "::error::Κάποιος απαραίτητος έλεγχος απέτυχε. Δες την ενότητα «Summary» στο κάτω μέρος αυτής της σελίδας."
+          exit 1
