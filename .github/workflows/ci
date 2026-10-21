@@ -1,0 +1,34 @@
+# Runs the automated tests whenever the code on "main" changes (for example
+# after editing aliases.json in the browser) and on pull requests.
+# It never touches the data branch and needs no secrets.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: node --test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+
+      - name: Εγκατάσταση Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Εγκατάσταση εξαρτήσεων (μόνο για τα τεστ)
+        run: npm ci
+
+      - name: Τεστ
+        run: node --test
