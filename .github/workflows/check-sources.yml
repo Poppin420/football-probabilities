@@ -19,6 +19,7 @@ jobs:
       FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      ELO_SOURCE: ${{ vars.ELO_SOURCE }}
     steps:
       - name: Λήψη του κώδικα
         uses: actions/checkout@v6
