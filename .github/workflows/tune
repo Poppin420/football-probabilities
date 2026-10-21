@@ -1,0 +1,74 @@
+# Weekly tuning and back-test (Phase 2, extended in Phase 3).
+# For every league it finds the best xi / sigma / omega / Elo setting on the last
+# two completed seasons, measures how reliable the probabilities were
+# (RPS, log-loss, Brier, calibration; since Phase 3 also the half-time markets) and
+# publishes tune.json (read by the daily refresh) and report.json (the tab
+# "Αξιοπιστία") to the branch "data".
+# Phase 3 also back-tests the Elo-only formula of the Champions League on the
+# domestic matches of all leagues (the cup has too few matches of its own).
+# Its warnings never fail the run; only a league below the 8 % RPS limit does.
+# It needs no secrets: it only downloads public CSV and ClubElo files.
+name: Εβδομαδιαίος έλεγχος αξιοπιστίας
+
+on:
+  schedule:
+    # Mondays 03:37 UTC (before the 05:07 refresh). Minute 37 instead of 0:
+    # GitHub delays or even drops runs at the top of the hour.
+    - cron: '37 3 * * 1'
+  workflow_dispatch:
+
+# Shares the lock with the daily refresh: both rewrite the "data" branch.
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+
+permissions:
+  contents: write # needed to push the branch "data"
+
+jobs:
+  tune:
+    name: Έλεγχος αξιοπιστίας
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Εγκατάσταση Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      # The whole branch is replaced by one new commit, so everything the
+      # tuning does not change (league files, caches, Greek comments) is
+      # taken from the previous content and carried over.
+      - name: Λήψη προηγούμενων δεδομένων
+        run: node scripts/data-branch.mjs fetch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Allowed to fail: a league below the 8 % RPS limit still gets its report
+      # published, and the job is failed in the last step so GitHub e-mails you.
+      - name: Βελτιστοποίηση και backtest
+        id: tune
+        continue-on-error: true
+        run: node scripts/tune.mjs
+
+      - name: Σύνοψη αποτελέσματος
+        if: ${{ hashFiles('data-out/report.json') != '' }}
+        run: node scripts/job-summary.mjs tune
+
+      # Nothing is published when no league could be evaluated (the old report stays).
+      - name: Δημοσίευση στο branch data
+        if: ${{ steps.tune.outputs.publish == 'true' }}
+        run: node scripts/data-branch.mjs publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Έλεγχος αποτελέσματος
+        if: ${{ steps.tune.outcome == 'failure' }}
+        run: |
+          echo "::error::Ο εβδομαδιαίος έλεγχος βρήκε πρόβλημα. Άνοιξε το βήμα «Βελτιστοποίηση και backtest» και δες τη σύνοψη: μια λίγκα κάτω από το όριο 8% στο RPS ή δεν μπόρεσε να αξιολογηθεί καμία λίγκα. Η σελίδα συνεχίζει να δείχνει τα τελευταία καλά δεδομένα."
+          exit 1
