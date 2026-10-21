@@ -24,10 +24,15 @@ import { SCORERS_ABSENCES_NOTE, buildMatchScorers, prepareScorers } from './scor
 export const CL_SCORERS_NOTE =
   'Δεν υπάρχουν διαθέσιμες συνθέσεις: οι πιθανότητες δεν λαμβάνουν υπόψη τραυματισμούς, ποινές ή αν ο παίκτης θα παίξει. ' +
   'Λίστα: παίκτες με τουλάχιστον ένα γκολ στο Champions League φέτος.';
+export const CL_NOTE_OWN =
+  'Στο Champions League οι ομάδες δεν έχουν κοινό ιστορικό, οπότε το μοντέλο χρησιμοποιεί μόνο τη διαφορά βαθμολογίας Elo, που υπολογίζουμε οι ίδιοι από τα αποτελέσματα των τελευταίων ετών (χωρίς εξωτερική πηγή). ' +
+  'Οι διαφορές ανάμεσα σε χώρες είναι λιγότερο αξιόπιστες, γιατί συνδέονται μόνο μέσω των αγώνων Champions League. ' +
+  'Δεν δείχνει φόρμα, απουσίες ή στυλ παιχνιδιού, και δεν υπάρχουν κόρνερ και κάρτες. Η βεβαιότητά του είναι χαμηλότερη από των εγχώριων λιγκών.';
 export const CL_NOTE =
   'Στο Champions League οι ομάδες δεν έχουν κοινό ιστορικό, οπότε το μοντέλο χρησιμοποιεί μόνο τη διαφορά βαθμολογίας Elo (clubelo.com). ' +
   'Δεν δείχνει φόρμα, απουσίες ή στυλ παιχνιδιού, και δεν υπάρχουν κόρνερ και κάρτες. Η βεβαιότητά του είναι χαμηλότερη από των εγχώριων λιγκών.';
 
+export const MIN_CLUB_MATCHES = 6; // own Elo: a club with fewer matches in the history is not rated well enough
 export const TOP_LEVELS = 2; // ClubElo division level of the clubs the cup draws from (1 = top flight)
 const LAMBAR_PRIOR_MATCHES = 4; // a team's goals per cup match is shrunk to the cup average with the weight of this many matches
 const LAMBDA_WARN = 5;
@@ -40,7 +45,7 @@ export function clubsByKey(clubs, resolver) {
     const k = resolver.key(c.club);
     const old = out.get(k);
     const level = Number.isFinite(c.level) ? c.level : 9;
-    if (!old || level < old.level || (level === old.level && c.elo > old.elo)) out.set(k, { club: c.club, elo: c.elo, level });
+    if (!old || level < old.level || (level === old.level && c.elo > old.elo)) out.set(k, { club: c.club, elo: c.elo, level, n: Number.isFinite(c.n) ? c.n : null });
   }
   return out;
 }
@@ -119,7 +124,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
     warnings.push({
       league: league.code,
       code: 'cup-results-unmatched',
-      message: `Champions League: ${cupUnmatched} παλιά αποτελέσματα δεν αντιστοιχίστηκαν σε ομάδες του ClubElo και δεν μετρούν (έλεγξε το aliases.json).`,
+      message: `Champions League: ${cupUnmatched} παλιά αποτελέσματα δεν αντιστοιχίστηκαν σε ομάδες της βαθμολογίας Elo και δεν μετρούν (έλεγξε το aliases.json).`,
     });
   }
 
@@ -129,6 +134,20 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
   for (const f of fixtures) {
     const h = teamOf(f.home);
     const a = teamOf(f.away);
+    const thin = [[f.home, h], [f.away, a]].filter(([, m]) => m.key && (eloByKey.get(m.key).n ?? Infinity) < MIN_CLUB_MATCHES);
+    if (thin.length > 0 && h.key && a.key) {
+      for (const [side, m] of thin) {
+        unmatchedNames.add(side.name);
+        warnings.push({
+          league: league.code,
+          code: 'thin-history',
+          team: side.name,
+          matchId: f.id,
+          message: `Η ομάδα "${side.name}" (${league.code}) έχει μόνο ${eloByKey.get(m.key).n} αγώνες στο ιστορικό μας (χρειάζονται τουλάχιστον ${MIN_CLUB_MATCHES}) - ο αγώνας παραλείπεται.`,
+        });
+      }
+      continue;
+    }
     if (!h.key || !a.key) {
       for (const [side, m] of [[f.home, h], [f.away, a]]) {
         if (m.key) continue;
@@ -139,7 +158,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
           team: side.name,
           matchId: f.id,
           reason: m.how,
-          message: `Δεν αντιστοιχίστηκε η ομάδα "${side.name}" (${league.code}) - ο αγώνας παραλείπεται. Πρόσθεσέ την στο aliases.json (όνομα όπως στο clubelo.com).`,
+          message: `Δεν αντιστοιχίστηκε η ομάδα "${side.name}" (${league.code}) - ο αγώνας παραλείπεται. Πρόσθεσέ την στο aliases.json (ή δεν έχουμε αγώνες της στο ιστορικό μας).`,
           closest: resolver.closest(side.name, universe).map((c) => c.key),
         });
       }
@@ -259,6 +278,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
         cupMatches: cupRows.length,
         cupSkipped,
         eloDate: elo.date,
+        eloSource: elo.source || 'clubelo',
         iterations: fit.iterations,
         converged: fit.converged,
       },
@@ -267,7 +287,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
     },
     teams: teamsOut,
     matches,
-    notes: { scorers: CL_SCORERS_NOTE, scorersAbsences: SCORERS_ABSENCES_NOTE, eloOnly: CL_NOTE },
+    notes: { scorers: CL_SCORERS_NOTE, scorersAbsences: SCORERS_ABSENCES_NOTE, eloOnly: elo.source === 'own' ? CL_NOTE_OWN : CL_NOTE },
   };
 
   const summary = {

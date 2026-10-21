@@ -7,7 +7,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LEAGUES, MODEL, RATE, csvSeasons, currentTime, isoDate, seasonStartYear } from '../src/config.js';
+import { LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, currentTime, eloPoolLeagues, isoDate, seasonStartYear } from '../src/config.js';
 import { createFdOrgClient, sampleOf, parseFixtures } from '../src/sources/footballDataOrg.js';
 import { fetchSeasonCsv } from '../src/sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../src/sources/clubElo.js';
@@ -128,6 +128,18 @@ async function checkChampionsLeague(client, year) {
       record(`results CL ${y} (${label})`, 'WARN', short(err));
     }
   }
+  // older seasons: the history of our own Elo (5 completed seasons); a restricted or missing season only means less history
+  const older = [];
+  for (let y = year - 2; y >= year - OWN_ELO.completedSeasons; y--) {
+    try {
+      const res = await client.results('CL', y);
+      older.push(res.restricted ? `${y}: ${res.reason}` : `${y}: ${res.results.filter((r) => r.x !== null).length} matches`);
+    } catch (err) {
+      older.push(`${y}: ${short(err)}`);
+    }
+  }
+  const usableOlder = older.filter((t) => /matches/.test(t) && !/: 0 matches/.test(t)).length;
+  record('results CL older seasons (own Elo history)', usableOlder === older.length ? 'PASS' : 'WARN', `${older.join(' | ')}${usableOlder < older.length ? ' - the seasons outside the free plan are simply not used (the Elo then starts from fewer Champions League matches)' : ''}`);
   try {
     clTeams = (await client.teams('CL')).teams;
     record('teams CL', clTeams.length >= 16 ? 'PASS' : 'WARN', `${clTeams.length} clubs`);
@@ -180,7 +192,29 @@ for (const league of csvLeagues.filter((l) => l.enabled)) {
 }
 
 // 3. ClubElo -----------------------------------------------------------------------
-section('ClubElo');
+section('Own Elo (computed from the results) and ClubElo (optional cross-check)');
+{
+  // depth of the history: the oldest of the 5 completed seasons must exist for the leagues that feed our own Elo
+  const oldest = csvSeasons(now, OWN_ELO.completedSeasons)[0];
+  let have = 0;
+  const lacking = [];
+  const pool = eloPoolLeagues().filter((l) => !only || only.includes(l.code));
+  for (const league of pool) {
+    try {
+      const res = await fetchSeasonCsv(league.div, oldest.code);
+      if (res.missing || res.stats.valid < 100) lacking.push(league.div);
+      else have++;
+    } catch (err) {
+      lacking.push(`${league.div} (${short(err)})`);
+    }
+    await sleep(RATE.csvPauseMs);
+  }
+  if (pool.length > 0) {
+    record(`own Elo history ${oldest.code}`, lacking.length === 0 ? 'PASS' : 'WARN', lacking.length === 0
+      ? `${have} leagues have the oldest season (${oldest.code}) of the history`
+      : `${lacking.length} of ${pool.length} leagues lack the season ${oldest.code}: ${lacking.join(', ')} (they just start later in the series; the rating of their clubs is then less settled)`);
+  }
+}
 try {
   const snap = await fetchEloSnapshot(isoDate(now));
   const byCountry = new Map();
@@ -193,7 +227,7 @@ try {
   }
   if (wantsCl && clTeams) checkClubNames(snap);
 } catch (err) {
-  record('ClubElo snapshot', 'WARN', `${short(err)} (Elo is extra information in Phase 1, the model does not need it)`);
+  record('ClubElo snapshot', 'WARN', `${short(err)} (not needed: the models use our own Elo; ClubElo is only an optional cross-check)`);
 }
 
 /** The Champions League clubs of football-data.org against the ClubElo list, the way the pipeline matches them. */

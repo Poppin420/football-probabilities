@@ -11,10 +11,17 @@
 // The Champions League (Phase 3) has no CSV: its clubs are compared with the ClubElo clubs of the top two
 // divisions of every country (check 1 only).
 // Exit code 1 when check 1 finds an unmatched name.
+//
+// ELO_SOURCE=clubelo (the old behaviour) compares with the ClubElo list as described above. By default the
+// models use our own Elo, which is built from the CSV results and the Champions League results: then the
+// ClubElo list is not needed at all. A fixture team must match the CSV names of its league (plus the other division
+// of the same country, for promoted clubs). Champions League clubs outside those leagues have no CSV history: they
+// are listed for information only (they are rated from their Champions League matches), and a name that merely
+// LOOKS like a domestic club is suggested as an alias, because a split spelling would split the rating in two.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RATE, activeLeagues, csvSeasons, currentTime, isoDate } from '../src/config.js';
+import { RATE, activeLeagues, csvSeasons, currentTime, eloPoolLeagues, isoDate } from '../src/config.js';
 import { createFdOrgClient } from '../src/sources/footballDataOrg.js';
 import { fetchSeasonCsv } from '../src/sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../src/sources/clubElo.js';
@@ -33,10 +40,13 @@ const now = currentTime();
 const only = process.env.FP_ONLY ? process.env.FP_ONLY.split(',').map((s) => s.trim()) : null;
 const seasons = csvSeasons(now).slice(-2); // previous completed + current
 
-const elo = await fetchEloSnapshot(isoDate(now)).catch((err) => {
-  console.log(`ClubElo unavailable: ${String(err.message).slice(0, 160)}\n`);
-  return null;
-});
+const useClubElo = process.env.ELO_SOURCE === 'clubelo';
+const elo = useClubElo
+  ? await fetchEloSnapshot(isoDate(now)).catch((err) => {
+      console.log(`ClubElo unavailable: ${String(err.message).slice(0, 160)}\n`);
+      return null;
+    })
+  : null;
 const client = process.env.FOOTBALL_DATA_TOKEN ? createFdOrgClient({ token: process.env.FOOTBALL_DATA_TOKEN }) : null;
 if (!client) console.log('FOOTBALL_DATA_TOKEN is not set: football-data.org names are not checked.\n');
 if (resolver.conflicts.length > 0) {
@@ -118,8 +128,75 @@ function check(title, items, universe) {
   return bad.length;
 }
 
+/** CSV team names of a league (previous completed + current season), downloaded once. */
+const namesCache = new Map();
+async function csvNamesOf(league) {
+  if (namesCache.has(league.code)) return namesCache.get(league.code);
+  const names = [];
+  for (const s of seasons) {
+    try {
+      const res = await fetchSeasonCsv(league.div, s.code);
+      for (const r of res.rows) names.push(r.home, r.away);
+    } catch (err) {
+      console.log(`  CSV ${league.div} ${s.code}: ${String(err.message).slice(0, 160)}`);
+    }
+    await sleep(RATE.csvPauseMs);
+  }
+  namesCache.set(league.code, names);
+  return names;
+}
+
+/** Champions League clubs against the CSV names of every league that feeds our own Elo (information only). */
+function checkCup(title, items, universe) {
+  const keys = new Set(universe.keys());
+  const claimed = new Set();
+  const fuzzy = [];
+  const alone = [];
+  for (const item of items) {
+    const m = resolver.matchAny([item.name, item.shortName], keys);
+    if (m.key) {
+      claimed.add(m.key);
+      if (m.how === 'fuzzy') fuzzy.push({ item, m });
+    } else {
+      alone.push(item);
+    }
+  }
+  console.log(`  ${title}: ${items.length - alone.length} of ${items.length} clubs have domestic results in the 12 leagues`);
+  const free = [...keys].filter((k) => !claimed.has(k));
+  const lookalikes = [];
+  const outside = [];
+  for (const item of alone) {
+    const k = resolver.key(item.name);
+    const best = free.map((u) => ({ key: u, score: hint(k, u) })).sort((a, b) => b.score - a.score)[0];
+    if (best && best.score >= SUGGEST_MIN) {
+      lookalikes.push(item.name);
+      console.log(`     ? "${item.name}" has no domestic match but looks like "${universe.get(best.key)}" (${best.score.toFixed(2)}): if it is the same club, add the alias below`);
+      suggestions.set(`  ${JSON.stringify(universe.get(best.key))}: [${JSON.stringify(item.name)}],`, true);
+    } else {
+      outside.push(item.name);
+    }
+  }
+  if (outside.length > 0) console.log(`     ℹ️  rated from their Champions League matches only (normal for clubs of other countries): ${outside.map((n) => `"${n}"`).join(', ')}`);
+  for (const { item, m } of fuzzy) {
+    console.log(`     ~ "${item.name}" was matched by similarity (${m.score.toFixed(2)}) to "${universe.get(m.key)}": check that this is the same club`);
+  }
+  return lookalikes.length;
+}
+
 for (const league of activeLeagues(only)) {
   console.log(`\n[${league.code}] ${league.name}`);
+  if (league.eloOnly && !useClubElo) {
+    if (!client) continue;
+    const names = [];
+    for (const l of eloPoolLeagues()) names.push(...(await csvNamesOf(l)));
+    try {
+      const { teams } = await client.teams(league.code);
+      unmatchedElo += checkCup('football-data.org vs domestic results (own Elo)', teams, displayMap(names));
+    } catch (err) {
+      console.log(`  football-data.org teams: ${String(err.message).slice(0, 160)}`);
+    }
+    continue;
+  }
   if (league.eloOnly) {
     // Champions League: no CSV history, the clubs come from any country (top two divisions, like the pipeline)
     if (!client) continue;
@@ -136,25 +213,23 @@ for (const league of activeLeagues(only)) {
     }
     continue;
   }
-  const csvNames = [];
-  for (const s of seasons) {
-    try {
-      const res = await fetchSeasonCsv(league.div, s.code);
-      for (const r of res.rows) csvNames.push(r.home, r.away);
-    } catch (err) {
-      console.log(`  CSV ${league.div} ${s.code}: ${String(err.message).slice(0, 160)}`);
-    }
-    await sleep(RATE.csvPauseMs);
-  }
+  const csvNames = [...(await csvNamesOf(league))];
   const csvMap = displayMap(csvNames);
   const eloMap = displayMap(elo ? elo.clubs.filter((c) => !league.eloCountry || c.country === league.eloCountry).map((c) => c.club) : []);
   // The pipeline matches fixtures against CSV teams and same-country Elo clubs together.
   const union = new Map([...eloMap, ...csvMap]);
+  if (!useClubElo) {
+    // own Elo: promoted clubs are known from the other division of the same country (e.g. the Championship)
+    for (const other of eloPoolLeagues()) {
+      if (other.code === league.code || other.eloCountry !== league.eloCountry) continue;
+      for (const [k, v] of displayMap(await csvNamesOf(other))) if (!union.has(k)) union.set(k, v);
+    }
+  }
 
   if (client) {
     try {
       const { teams } = await client.teams(league.code);
-      unmatchedFixtures += check('football-data.org vs CSV + ClubElo (decides if fixtures are used)', teams, union);
+      unmatchedFixtures += check(useClubElo ? 'football-data.org vs CSV + ClubElo (decides if fixtures are used)' : 'football-data.org vs CSV results (decides if fixtures are used)', teams, union);
     } catch (err) {
       console.log(`  football-data.org teams: ${String(err.message).slice(0, 160)}`);
     }
@@ -169,7 +244,8 @@ if (unmatchedFixtures + unmatchedElo === 0) {
   console.log('Every name matched. aliases.json needs no changes.');
 } else {
   if (unmatchedFixtures > 0) console.log(`${unmatchedFixtures} football-data.org name(s) cannot be matched: their fixtures are SKIPPED until an alias is added.`);
-  if (unmatchedElo > 0) console.log(`${unmatchedElo} CSV name(s) are missing in ClubElo (old clubs that left the league are normal and harmless).`);
+  if (unmatchedElo > 0 && useClubElo) console.log(`${unmatchedElo} CSV name(s) are missing in ClubElo (old clubs that left the league are normal and harmless).`);
+  if (unmatchedElo > 0 && !useClubElo) console.log(`${unmatchedElo} Champions League club(s) look like a domestic club under another spelling: add the alias line(s) below, otherwise their rating is split in two.`);
   if (suggestions.size > 0) {
     console.log('\nSuggested lines for aliases.json (inside the outer { }, check each one before pasting!):\n');
     for (const line of suggestions.keys()) console.log(line);

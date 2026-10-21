@@ -24,6 +24,9 @@ export function keepCacheName(name, now) {
   if (m) return 2000 + Number(m[1]) >= oldestSeasonNeeded(now);
   m = /^elo-(\d{4}-\d{2}-\d{2})$/.exec(name);
   if (m) return Date.parse(m[1]) >= eloKeepFrom(now);
+  // finished Champions League matches: the own-Elo history reads the last 5 seasons, the weekly tuning needs them too
+  m = /^cup-results-[A-Za-z0-9]+-(\d{4})$/.exec(name);
+  if (m) return Number(m[1]) >= seasonStartYear(now) - EVAL_SEASONS - SEASONS_BACK;
   if (name === 'apif-usage') return true; // the API-Football request counter of the day must survive a run that does not touch it
-  return false; // "elo", "scorers-*", "cup-results-*", "apif-extras": owned by the daily refresh, which rewrites them itself
+  return false; // "elo", "scorers-*", "apif-extras": owned by the daily refresh, which rewrites them itself
 }

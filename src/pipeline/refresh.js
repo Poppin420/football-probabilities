@@ -16,13 +16,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CURRENT_PHASE, LEAGUES, MODEL, RATE, csvSeasons, cupLeagues, currentTime, dayNumber, domesticLeagues, isoDate, seasonStartYear } from '../config.js';
+import { CURRENT_PHASE, LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, cupLeagues, currentTime, dayNumber, domesticLeagues, eloPoolLeagues, isoDate, seasonStartYear } from '../config.js';
 import { createFdOrgClient, sampleOf } from '../sources/footballDataOrg.js';
 import { fetchSeasonCsv } from '../sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../sources/clubElo.js';
 import { createResolver } from '../sources/names.js';
 import { loadAliases } from '../sources/aliases.js';
 import { sleep } from '../sources/http.js';
+import { compareRatings } from '../model/ownElo.js';
+import { buildOwnElo } from './ownEloData.js';
 import { estimateHalfShare } from '../model/htft.js';
 import { buildLeague } from './league.js';
 import { buildChampionsLeague } from './championsLeague.js';
@@ -48,7 +50,9 @@ export async function runRefresh({
   logger = console,
   only = null,
   ai = {}, // { chat, sleepFn, limits, prompt }: test hooks for the Groq step
-  eloBudgetMs = 10 * 60 * 1000, // time allowed for the first download of the monthly ClubElo snapshots
+  eloBudgetMs = 10 * 60 * 1000, // time allowed for the first download of the monthly ClubElo snapshots (eloSource 'clubelo')
+  eloSource = (env.ELO_SOURCE ?? process.env.ELO_SOURCE) === 'clubelo' ? 'clubelo' : 'own', // 'own' = Elo computed from the results (default), 'clubelo' = downloaded
+  eloCheckMs = 30 * 1000, // time allowed for the ClubElo cross-check of the own Elo
 } = {}) {
   fs.mkdirSync(outDir, { recursive: true });
   const warnings = [];
@@ -58,6 +62,7 @@ export async function runRefresh({
     footballDataOrg: { status: 'unknown', detail: '' },
     footballDataCoUk: { status: 'unknown', detail: '' },
     clubElo: { status: 'unknown', detail: '' },
+    ownElo: { status: eloSource === 'own' ? 'unknown' : 'off', detail: '' },
     apiFootball: { status: 'off', detail: 'not run' },
   };
   const sampleLogged = new Set();
@@ -96,20 +101,31 @@ export async function runRefresh({
     logger.error('FOOTBALL_DATA_TOKEN is not set: every league keeps its last data (stale).');
   }
 
-  // ClubElo (optional) ---------------------------------------------------------
-  const elo = await loadElo({ cache, now, sources, logSample, logger });
+  // Elo: our own (computed below, after the downloads) or ClubElo's ------------------------
+  const own = eloSource === 'own';
+  let elo = null; // the rating list the models use (ONE source)
+  let clubEloNow = null; // today's ClubElo list: the model uses it only when eloSource is 'clubelo'; otherwise it is the cross-check
+  const clubEloLoad = () => loadElo({ cache, now, sources, logSample, logger });
+  if (own) clubEloNow = await withTimeout(clubEloLoad(), eloCheckMs, null, () => {
+    sources.clubElo = { status: 'error', detail: `no answer within ${Math.round(eloCheckMs / 1000)} s (cross-check only)` };
+    logger.error(`[ClubElo] ${sources.clubElo.detail}`);
+  });
+  else elo = await clubEloLoad();
+  const ownSeasons = own ? csvSeasons(now, OWN_ELO.completedSeasons) : seasons;
+  const keepSeasons = new Set(seasons.map((s) => s.code));
 
   // A. Downloads ------------------------------------------------------------------
   const fetched = new Map(); // league code -> { csv, fx, scorers, cupResults } | { error }
   for (const league of domestic) {
     try {
       if (!client) throw new Error('FOOTBALL_DATA_TOKEN is not set');
-      const csv = await loadCsv({ league, seasons, cache, now, sources, logSample, logger, warnings });
+      const csvAll = await loadCsv({ league, seasons: ownSeasons, cache, now, sources, logSample, logger, warnings });
+      const csv = { ...csvAll, bySeason: new Map([...csvAll.bySeason].filter(([code]) => keepSeasons.has(code))) };
       const fx = await client.fixtures(league.code, { now, horizonDays: MODEL.horizonDays });
       sources.footballDataOrg = { status: 'ok', detail: `${client.state.calls} calls` };
       if (fx.fixtures[0]) logSample('football-data.org fixture', sampleOf(fx.fixtures[0]));
       const scorers = await loadScorers({ client, league, seasonYear, cache, now, logSample, logger, warnings });
-      fetched.set(league.code, { csv, fx, scorers });
+      fetched.set(league.code, { csv, csvAll, fx, scorers });
     } catch (err) {
       fetched.set(league.code, { error: err });
     }
@@ -127,6 +143,40 @@ export async function runRefresh({
       fetched.set(league.code, { error: err });
     }
   }
+
+  // A2. Own Elo: the results of the other leagues with a club in Europe, the older Champions League seasons, then the ratings.
+  let ownElo = null;
+  if (own) {
+    const extraCsv = new Map();
+    for (const league of eloPoolLeagues()) {
+      if (fetched.get(league.code)?.csvAll) continue;
+      try {
+        const sink = []; // missing files of the extra leagues are not worth a warning
+        extraCsv.set(league.code, await loadCsv({ league, seasons: ownSeasons, cache, now, sources: { footballDataCoUk: { status: 'ok' } }, logSample, logger, warnings: sink }));
+      } catch (err) {
+        logger.error(`[own Elo] ${league.code}: ${err.message}`);
+      }
+    }
+    let cupHistory = [];
+    if (cups.length > 0) cupHistory = await loadCupHistory({ client, league: cups[0], seasonYear, cache, now, logger });
+    const leagueRows = [];
+    for (const league of eloPoolLeagues()) {
+      const csv = fetched.get(league.code)?.csvAll ?? extraCsv.get(league.code);
+      if (csv) leagueRows.push({ league, rows: [...csv.bySeason.values()].flat() });
+    }
+    const cupParts = [...cupHistory, ...cups.flatMap((c) => fetched.get(c.code)?.cupResults ?? [])];
+    if (leagueRows.some((l) => l.rows.length > 0)) {
+      ownElo = buildOwnElo({ leagueRows, cupParts, resolver, now, fromDay: pooledFromDay(now) });
+      elo = ownElo.current;
+      sources.ownElo = { status: 'ok', detail: `${ownElo.info.matches} matches, ${ownElo.info.clubs} clubs (${ownElo.info.cupMatches} Champions League)` };
+      logger.log(`[own Elo] ${sources.ownElo.detail}`);
+    } else {
+      sources.ownElo = { status: 'error', detail: 'no results downloaded' };
+      logger.error('[own Elo] no results downloaded: the leagues run without the Elo prior, the Champions League is skipped');
+    }
+  }
+  const eloCheck = ownElo ? crossCheck(ownElo.current.clubs, clubEloNow, resolver) : null;
+  if (eloCheck) logger.log(`[Elo check] ${eloCheck.status}${eloCheck.n ? `: ${eloCheck.n} common clubs, correlation ${fmt(eloCheck.correlation, 3)}, mean difference ${fmt(eloCheck.meanAbsDiff, 1)} points` : ''}`);
 
   // B. API-Football extras (referees, injuries) -------------------------------------
   const wanted = [...domestic, ...cups]
@@ -211,7 +261,7 @@ export async function runRefresh({
       });
       built.json.sources = {
         scorers: d.scorers?.current ? { fetchedAt: d.scorers.current.fetchedAt, ageHours: Math.round(ageHours(d.scorers.current.fetchedAt, now)) } : null,
-        elo: elo ? { date: elo.date, fetchedAt: elo.fetchedAt } : null,
+        elo: elo ? { date: elo.date, fetchedAt: elo.fetchedAt, source: own ? 'own' : 'clubelo' } : null,
         apiFootball: extrasInfo(extras.byLeague.get(league.code)),
       };
       finishLeague(league, entry, built, d.csv.staleParts.length > 0 ? `Αποτελέσματα από cache: ${d.csv.staleParts.join('; ')}` : null);
@@ -227,8 +277,8 @@ export async function runRefresh({
     try {
       const d = fetched.get(league.code);
       if (d.error) throw d.error;
-      if (!elo) throw new Error('το ClubElo δεν είναι διαθέσιμο (χρειάζεται για το μοντέλο Elo)');
-      const pool = await buildPool({ fetched, seasons, resolver, cache, now, sources, logSample, logger, warnings, eloBudgetMs });
+      if (!elo) throw new Error(own ? 'δεν υπάρχουν αποτελέσματα για να υπολογιστεί το Elo (χρειάζεται για το μοντέλο Elo)' : 'το ClubElo δεν είναι διαθέσιμο (χρειάζεται για το μοντέλο Elo)');
+      const pool = await buildPool({ fetched, seasons, resolver, cache, now, sources, logSample, logger, warnings, eloBudgetMs, ownSnaps: ownElo?.snaps ?? null });
       const built = buildChampionsLeague({
         league,
         fixtures: d.fx.fixtures,
@@ -245,7 +295,7 @@ export async function runRefresh({
       built.json.params.pool = pool.info;
       built.json.sources = {
         scorers: d.scorers?.current ? { fetchedAt: d.scorers.current.fetchedAt, ageHours: Math.round(ageHours(d.scorers.current.fetchedAt, now)) } : null,
-        elo: { date: elo.date, fetchedAt: elo.fetchedAt },
+        elo: { date: elo.date, fetchedAt: elo.fetchedAt, source: own ? 'own' : 'clubelo' },
         apiFootball: extrasInfo(extras.byLeague.get(league.code)),
       };
       finishLeague(league, entry, built);
@@ -298,6 +348,7 @@ export async function runRefresh({
     sources,
     ai: aiStats,
     tune: { found: tune.found, generatedAt: tune.generatedAt, calibration: Boolean(tune.calibration) },
+    elo: { source: eloSource, ...(ownElo ? { clubs: ownElo.info.clubs, matches: ownElo.info.matches, cupMatches: ownElo.info.cupMatches } : {}), check: eloCheck },
   };
   writeJson(path.join(outDir, 'index.json'), index);
 
@@ -458,11 +509,42 @@ async function loadCupResults({ client, league, seasonYear, cache, now, logSampl
 }
 
 /**
+ * Older Champions League seasons for our own Elo (seasonYear-2 .. seasonYear-OWN_ELO.completedSeasons). Nothing here is
+ * fatal: a season that cannot be read (outside the free plan, network) is simply missing from the history.
+ */
+async function loadCupHistory({ client, league, seasonYear, cache, now, logger }) {
+  const parts = [];
+  for (let year = seasonYear - 2; year >= seasonYear - OWN_ELO.completedSeasons; year--) {
+    const name = `cup-results-${league.code}-${year}`;
+    const cached = cache.peek(name);
+    if (cached && ageHours(cached.fetchedAt, now) < PREVIOUS_CUP_RESULTS_TTL_H) {
+      cache.put(name, cached);
+      parts.push({ season: 'older', results: cached.results });
+      continue;
+    }
+    try {
+      if (!client) throw new Error('no football-data.org client');
+      const res = await client.results(league.code, year);
+      cache.put(name, { fetchedAt: now.toISOString(), restricted: res.restricted, reason: res.reason || null, results: res.results });
+      parts.push({ season: 'older', results: res.results });
+      if (res.restricted) logger.log(`[${league.code}] results ${year}: ${res.reason} (outside the free plan) - not used`);
+    } catch (err) {
+      logger.error(`[${league.code}] results ${year}: ${err.message}`);
+      if (cached) {
+        cache.put(name, cached);
+        parts.push({ season: 'older', results: cached.results });
+      }
+    }
+  }
+  return parts;
+}
+
+/**
  * Everything the Elo-only model needs from the domestic leagues: the monthly ClubElo snapshots, the rows of
  * the pooled regression and the pooled first-half share. Leagues that were not downloaded in this run
  * (FP_ONLY) are read from the cache or downloaded here.
  */
-async function buildPool({ fetched, seasons, resolver, cache, now, sources, logSample, logger, warnings, eloBudgetMs }) {
+async function buildPool({ fetched, seasons, resolver, cache, now, sources, logSample, logger, warnings, eloBudgetMs, ownSnaps = null }) {
   const tNow = dayNumber(now);
   const xi = MODEL.xi;
   const all = domesticLeagues();
@@ -485,17 +567,19 @@ async function buildPool({ fetched, seasons, resolver, cache, now, sources, logS
   const fromDay = pooledFromDay(now);
   const dates = monthStarts(fromDay, tNow);
   const countries = new Set(all.map((l) => l.eloCountry).filter(Boolean));
-  const snapRes = await loadEloSnapshots({
-    dates: dates.slice().reverse(), // newest first: if the time runs out, the recent months are the ones that exist
-    countries,
-    cache,
-    now,
-    logger,
-    sleepFn: sleep,
-    fetchElo: fetchEloSnapshot,
-    deadline: Date.now() + eloBudgetMs,
-  });
-  if (snapRes.snaps.size === 0) throw new Error('δεν υπάρχουν μηνιαία στιγμιότυπα ClubElo για το μοντέλο Elo');
+  const snapRes = ownSnaps
+    ? { snaps: ownSnaps, failed: 0, downloads: 0 }
+    : await loadEloSnapshots({
+        dates: dates.slice().reverse(), // newest first: if the time runs out, the recent months are the ones that exist
+        countries,
+        cache,
+        now,
+        logger,
+        sleepFn: sleep,
+        fetchElo: fetchEloSnapshot,
+        deadline: Date.now() + eloBudgetMs,
+      });
+  if (snapRes.snaps.size === 0) throw new Error(`δεν υπάρχουν μηνιαία στιγμιότυπα ${ownSnaps ? 'Elo' : 'ClubElo'} για το μοντέλο Elo`);
   if (snapRes.failed > 0) {
     warnings.push({ league: 'CL', code: 'elo-partial', message: `ClubElo: ${snapRes.failed} από ${dates.length} μηνιαία στιγμιότυπα λείπουν - το μοντέλο Elo χρησιμοποιεί λιγότερα δεδομένα.` });
   }
@@ -526,6 +610,37 @@ async function buildPool({ fetched, seasons, resolver, cache, now, sources, logS
       snapshotsWanted: dates.length,
     },
   };
+}
+
+/** Resolves with `fallback` (and calls onTimeout) when the promise has not settled within `ms`. */
+function withTimeout(promise, ms, fallback, onTimeout) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      onTimeout?.();
+      resolve(fallback);
+    }, ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Own ratings against ClubElo's on the clubs both have (information only: the model uses one source). */
+function crossCheck(ownClubs, clubElo, resolver) {
+  if (!clubElo?.clubs?.length) return { status: 'unavailable', n: 0, correlation: null, meanAbsDiff: null, offset: null, date: null };
+  const best = (clubs) => {
+    const m = new Map();
+    for (const c of clubs) {
+      if (Number.isFinite(c.level) && c.level > 2) continue;
+      const k = resolver.key(c.club);
+      if (!m.has(k) || c.elo > m.get(k)) m.set(k, c.elo);
+    }
+    return m;
+  };
+  // only the clubs with a reliable history of ours
+  const reliable = ownClubs.filter((c) => (c.n ?? 0) >= 20);
+  const r = compareRatings(best(reliable), best(clubElo.clubs));
+  return { status: r.n >= 10 ? 'ok' : 'few-clubs', ...r, date: clubElo.date ?? null };
 }
 
 function fmt(x, d = 2) {

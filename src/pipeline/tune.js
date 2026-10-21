@@ -24,7 +24,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { RATE, domesticLeagues, currentTime, seasonCode, seasonStartYear } from '../config.js';
+import { RATE, domesticLeagues, currentTime, eloPoolLeagues, isoDate, seasonCode, seasonStartYear } from '../config.js';
 import { fetchSeasonCsv } from '../sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../sources/clubElo.js';
 import { createResolver } from '../sources/names.js';
@@ -39,6 +39,7 @@ import { adoptedCalibration, fitCalibration, nestedEvaluate } from '../model/cal
 import { ageHours, copyTree, createCache, readJsonIfExists, writeJson } from './cache.js';
 import { GRID } from './tuneFile.js';
 import { loadEloSnapshots, makeEloAt, monthStarts } from './eloSnapshots.js';
+import { buildOwnElo } from './ownEloData.js';
 import { BIG_GAP, matchKey, runEloOnlyBacktest, skipReasonText, summarizeFits } from './eloOnlyBacktest.js';
 import { EVAL_SEASONS, SEASONS_BACK, keepCacheName, oldestSeasonNeeded } from './retention.js';
 
@@ -420,6 +421,59 @@ export function tuneLeague({ league, matches, from, to, eloAt, resolver, bootstr
   return { tune, report, records };
 }
 
+// ------------------------------------------------- ClubElo as the alternative --
+
+/**
+ * The same Elo-only proxy back-test with ClubElo's ratings, when ClubElo answers (information only: the model uses ONE
+ * source). Returns { status: 'unavailable' } when it does not.
+ */
+async function clubEloAlternative({ eloOnly, domestic, leagues, from, to, resolver, cache, now, logger, sleepFn, fetchElo, deadline, probeMs, eloOnlyMinRows, warnings }) {
+  try {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`no answer within ${Math.round(probeMs / 1000)} s`)), probeMs);
+      timer.unref?.();
+    });
+    try {
+      await Promise.race([fetchElo(isoDate(now)), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    logger.log(`[ClubElo] not available (${String(err.message).slice(0, 120)}): no comparison this week`);
+    return { status: 'unavailable', reason: String(err.message).slice(0, 160) };
+  }
+  try {
+    const dates = monthStarts(from, to);
+    const countries = new Set(leagues.map((l) => l.eloCountry).filter(Boolean));
+    const res = await loadEloSnapshots({ dates, countries, cache, now, logger, sleepFn, fetchElo, deadline });
+    if (res.snaps.size === 0) return { status: 'unavailable', reason: 'no snapshots' };
+    const alt = domestic.map((d) => {
+      const teamKeys = new Set();
+      for (const m of d.history) {
+        teamKeys.add(m.home);
+        teamKeys.add(m.away);
+      }
+      const lg = leagues.find((l) => l.code === d.code);
+      return { ...d, eloAt: makeEloAt({ snaps: res.snaps, country: lg.eloCountry, resolver, teamKeys }) };
+    });
+    const proxy = runEloOnlyBacktest({ domestic: alt, from, to, ...(eloOnlyMinRows ? { minRows: eloOnlyMinRows } : {}) });
+    const rep = eloOnlyReport({ proxy, fullRecords: [], leagues: alt.map((l) => l.code) });
+    if (rep.skipped) return { status: 'skipped', reason: rep.skipped };
+    const ownRps = eloOnly.metrics?.model?.x12?.rps;
+    const altRps = rep.metrics?.model?.x12?.rps;
+    const margin = 0.0005;
+    const better = !Number.isFinite(ownRps) || !Number.isFinite(altRps) ? null : altRps < ownRps - margin ? 'clubelo' : ownRps < altRps - margin ? 'own' : 'equal';
+    if (better === 'clubelo') {
+      warnings.push({ code: 'clubelo-better', message: `Το ClubElo ξαναλειτουργεί και στη δοκιμή μόνο-Elo βγαίνει καλύτερο από το δικό μας Elo (RPS ${altRps} έναντι ${ownRps}). Αν θες να το χρησιμοποιήσεις, βάλε τη μεταβλητή ELO_SOURCE = clubelo (δες SETUP.md).` });
+    }
+    return { status: 'ok', n: rep.n, rps: altRps, ownRps, skillVsBase: rep.skill?.vsBase?.rps ?? null, better };
+  } catch (err) {
+    logger.error(`[ClubElo comparison] ${err.message}`);
+    return { status: 'error', reason: String(err.message).slice(0, 160) };
+  }
+}
+
 // ------------------------------------------------------------ orchestrator --
 
 /**
@@ -437,6 +491,8 @@ export async function runTune({
   sleepFn = sleep,
   fetchCsv = fetchSeasonCsv,
   fetchElo = fetchEloSnapshot,
+  eloSource = process.env.ELO_SOURCE === 'clubelo' ? 'clubelo' : 'own', // 'own' = Elo computed from the results (default), 'clubelo' = downloaded
+  eloProbeMs = 30 * 1000, // time allowed for the ClubElo availability probe (own Elo: the cross-check runs only when ClubElo answers)
   eloOnlyMinRows = null, // tests only: the smallest pooled sample of the Elo-only regression (production value when null)
 } = {}) {
   const deadline = Date.now() + budgetMs;
@@ -494,12 +550,46 @@ export async function runTune({
     }
   }
 
-  // ClubElo snapshots (monthly) ----------------------------------------------------
+  // Elo snapshots (monthly): our own, computed from the results, or ClubElo's --------------
+  const own = eloSource === 'own';
   let snaps = new Map();
-  const eloStats = { wanted: 0, have: 0, failed: 0 };
-  if (data.size > 0) {
-    const from = Math.min(...[...data.values()].map((d) => d.from));
-    const to = Math.max(...[...data.values()].map((d) => d.to));
+  const eloStats = { source: eloSource, wanted: 0, have: 0, failed: 0 };
+  let ownInfo = null;
+  const dataRange = () => {
+    const ds = [...data.values()];
+    return { from: Math.min(...ds.map((d) => d.from)), to: Math.max(...ds.map((d) => d.to)) };
+  };
+  if (data.size > 0 && own) {
+    const { from } = dataRange();
+    const leagueRows = [];
+    for (const league of eloPoolLeagues()) {
+      let rows = data.get(league.code)?.rows;
+      if (!rows) {
+        try {
+          rows = (await loadHistory({ league, years, cache, now, resolver, logger, sleepFn, fetchCsv, state: csvState })).rows;
+        } catch (err) {
+          logger.error(`[own Elo] ${league.code}: ${err.message}`);
+          continue;
+        }
+      }
+      leagueRows.push({ league, rows });
+    }
+    // finished Champions League matches: read from the cache the daily refresh keeps (no download here)
+    const cupParts = [];
+    for (let y = cur - 1; y >= cur - 1 - EVAL_SEASONS - SEASONS_BACK; y--) {
+      const c = cache.peek(`cup-results-CL-${y}`);
+      if (c?.results) {
+        cache.put(`cup-results-CL-${y}`, c);
+        cupParts.push({ season: String(y), results: c.results });
+      }
+    }
+    const built = buildOwnElo({ leagueRows, cupParts, resolver, now, fromDay: from });
+    snaps = built.snaps;
+    ownInfo = built.info;
+    Object.assign(eloStats, { wanted: built.info.snapshots, have: snaps.size, failed: 0, matches: built.info.matches, clubs: built.info.clubs, cupMatches: built.info.cupMatches });
+    if (built.info.cupMatches === 0) warnings.push({ code: 'own-elo-no-cup', message: 'Δικό μας Elo: δεν υπάρχουν αποτελέσματα Champions League στο cache - οι χώρες δεν συνδέονται μεταξύ τους (το Elo prior κάθε λίγκας δεν επηρεάζεται).' });
+  } else if (data.size > 0) {
+    const { from, to } = dataRange();
     const dates = monthStarts(from, to);
     const countries = new Set(leagues.map((l) => l.eloCountry).filter(Boolean));
     const res = await loadEloSnapshots({ dates, countries, cache, now, logger, sleepFn, fetchElo, deadline });
@@ -559,7 +649,7 @@ export async function runTune({
     if (old?.metrics) report.eloOnly = { ...old, stale: true, staleReason: reason, staleSince: old.staleSince || prevReport.generatedAt };
   };
   if (snaps.size === 0) {
-    keepPreviousEloOnly('δεν υπάρχουν στιγμιότυπα ClubElo');
+    keepPreviousEloOnly(own ? 'δεν υπάρχουν στιγμιότυπα Elo' : 'δεν υπάρχουν στιγμιότυπα ClubElo');
   } else if (data.size > 0) {
     let eloOnly;
     try {
@@ -582,6 +672,10 @@ export async function runTune({
         ...(eloOnlyMinRows ? { minRows: eloOnlyMinRows } : {}),
       });
       eloOnly = eloOnlyReport({ proxy, fullRecords: allRecords, leagues: domestic.map((l) => l.code) });
+      if (own && !eloOnly.skipped) {
+        eloOnly.source = 'own';
+        eloOnly.alt = await clubEloAlternative({ eloOnly, domestic, leagues, from: Math.min(...domestic.map((l) => l.from)), to: Math.max(...domestic.map((l) => l.to)), resolver, cache, now, logger, sleepFn, fetchElo, deadline, probeMs: eloProbeMs, eloOnlyMinRows, warnings });
+      }
     } catch (err) {
       logger.error(`[Elo-only] ${err.stack || err.message}`);
       eloOnly = { skipped: err.message };

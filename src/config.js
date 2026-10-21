@@ -18,21 +18,21 @@ export const BASES = {
  * enabled:false entries have CSV history but no free fixture source.
  */
 export const LEAGUES = [
-  { code: 'PL', div: 'E0', name: 'Premier League', country: 'Αγγλία', eloCountry: 'ENG', afId: 39, phase: 1, enabled: true },
-  { code: 'ELC', div: 'E1', name: 'Championship', country: 'Αγγλία', eloCountry: 'ENG', afId: 40, phase: 1, enabled: true },
-  { code: 'BL1', div: 'D1', name: 'Bundesliga', country: 'Γερμανία', eloCountry: 'GER', afId: 78, phase: 1, enabled: true },
-  { code: 'SA', div: 'I1', name: 'Serie A', country: 'Ιταλία', eloCountry: 'ITA', afId: 135, phase: 1, enabled: true },
-  { code: 'PD', div: 'SP1', name: 'La Liga', country: 'Ισπανία', eloCountry: 'ESP', afId: 140, phase: 1, enabled: true },
-  { code: 'FL1', div: 'F1', name: 'Ligue 1', country: 'Γαλλία', eloCountry: 'FRA', afId: 61, phase: 1, enabled: true },
-  { code: 'DED', div: 'N1', name: 'Eredivisie', country: 'Ολλανδία', eloCountry: 'NED', afId: 88, phase: 1, enabled: true },
-  { code: 'PPL', div: 'P1', name: 'Primeira Liga', country: 'Πορτογαλία', eloCountry: 'POR', afId: 94, phase: 1, enabled: true },
+  { code: 'PL', div: 'E0', name: 'Premier League', country: 'Αγγλία', eloCountry: 'ENG', eloLevel: 1, afId: 39, phase: 1, enabled: true },
+  { code: 'ELC', div: 'E1', name: 'Championship', country: 'Αγγλία', eloCountry: 'ENG', eloLevel: 2, afId: 40, phase: 1, enabled: true },
+  { code: 'BL1', div: 'D1', name: 'Bundesliga', country: 'Γερμανία', eloCountry: 'GER', eloLevel: 1, afId: 78, phase: 1, enabled: true },
+  { code: 'SA', div: 'I1', name: 'Serie A', country: 'Ιταλία', eloCountry: 'ITA', eloLevel: 1, afId: 135, phase: 1, enabled: true },
+  { code: 'PD', div: 'SP1', name: 'La Liga', country: 'Ισπανία', eloCountry: 'ESP', eloLevel: 1, afId: 140, phase: 1, enabled: true },
+  { code: 'FL1', div: 'F1', name: 'Ligue 1', country: 'Γαλλία', eloCountry: 'FRA', eloLevel: 1, afId: 61, phase: 1, enabled: true },
+  { code: 'DED', div: 'N1', name: 'Eredivisie', country: 'Ολλανδία', eloCountry: 'NED', eloLevel: 1, afId: 88, phase: 1, enabled: true },
+  { code: 'PPL', div: 'P1', name: 'Primeira Liga', country: 'Πορτογαλία', eloCountry: 'POR', eloLevel: 1, afId: 94, phase: 1, enabled: true },
   // Phase 3: Elo-only model (ClubElo difference only), no domestic history of its own.
   { code: 'CL', div: null, name: 'Champions League', country: 'Ευρώπη', afId: 2, eloOnly: true, phase: 3, enabled: true },
   // Goals-only CSV leagues; football-data.org's free tier has no fixtures for them.
-  { code: 'B1', div: 'B1', name: 'Jupiler League', country: 'Βέλγιο', phase: 9, enabled: false, reason: 'no free fixture source' },
-  { code: 'T1', div: 'T1', name: 'Süper Lig', country: 'Τουρκία', phase: 9, enabled: false, reason: 'no free fixture source' },
-  { code: 'G1', div: 'G1', name: 'Super League', country: 'Ελλάδα', phase: 9, enabled: false, reason: 'no free fixture source' },
-  { code: 'SC0', div: 'SC0', name: 'Premiership', country: 'Σκωτία', phase: 9, enabled: false, reason: 'no free fixture source' },
+  { code: 'B1', div: 'B1', name: 'Jupiler League', country: 'Βέλγιο', eloCountry: 'BEL', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
+  { code: 'T1', div: 'T1', name: 'Süper Lig', country: 'Τουρκία', eloCountry: 'TUR', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
+  { code: 'G1', div: 'G1', name: 'Super League', country: 'Ελλάδα', eloCountry: 'GRE', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
+  { code: 'SC0', div: 'SC0', name: 'Premiership', country: 'Σκωτία', eloCountry: 'SCO', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
 ];
 
 export const CURRENT_PHASE = 3;
@@ -50,6 +50,20 @@ export function domesticLeagues(only = null) {
 export function cupLeagues(only = null) {
   return activeLeagues(only).filter((l) => l.eloOnly);
 }
+
+/**
+ * The leagues whose CSV results feed our own Elo (the enabled ones plus the goals-only ones): every league with a
+ * `div` and an `eloCountry`. Only the enabled leagues are modelled; the others just give the Elo of their clubs
+ * (they play the Champions League) a history.
+ */
+export function eloPoolLeagues() {
+  return LEAGUES.filter((l) => l.div && l.eloCountry);
+}
+
+/** Own Elo (src/model/ownElo.js): how much history is read. */
+export const OWN_ELO = Object.freeze({
+  completedSeasons: 5, // 5 completed seasons + the current one
+});
 
 export const MODEL = Object.freeze({
   xi: 0.0019,

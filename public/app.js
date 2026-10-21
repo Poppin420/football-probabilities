@@ -9,6 +9,7 @@
 import {
   STALE_AFTER_HOURS, agoText, ageHours, athensDay, collectEntries, dataBase, dayHeading, formatStamp, groupByDay, parseHash, parseView, safeFile, staleInfo,
 } from './util.js';
+import { num } from './format.js';
 import { TABS, createViews, makeH, safeId } from './views.js';
 import { createReliability } from './reliability.js';
 
@@ -598,6 +599,17 @@ export function createApp({
     const usesApif = apif === 'ok' || apif === 'stale';
     if ($('credit-apif')) $('credit-apif').hidden = !usesApif;
     if ($('foot-absences')) $('foot-absences').hidden = !usesApif;
+    // Elo: our own computation by default; ClubElo is credited only when its ratings are what the models use
+    // (older data files have no `elo` block: they used ClubElo)
+    const eloSource = state.index.elo?.source === 'own' ? 'own' : 'clubelo';
+    if ($('credit-elo-own')) $('credit-elo-own').hidden = eloSource !== 'own';
+    if ($('credit-elo-ce')) $('credit-elo-ce').hidden = eloSource !== 'clubelo';
+    const check = state.index.elo?.check;
+    if ($('credit-elo-check')) {
+      const ok = eloSource === 'own' && check && check.status === 'ok' && Number.isFinite(check.correlation);
+      $('credit-elo-check').hidden = !ok;
+      $('credit-elo-check').replaceChildren(...(ok ? [` (σύγκριση με το `, h('a', { href: 'http://clubelo.com/', target: '_blank', rel: 'noopener noreferrer' }, 'clubelo.com'), `: συσχέτιση ${num(check.correlation, 2)} σε ${check.n} ομάδες)`] : []));
+    }
     if ($('foot-cl')) $('foot-cl').hidden = !state.index.leagues.some((l) => l && l.eloOnly);
     const warnings = Array.isArray(state.index.warnings) ? state.index.warnings.filter((w) => w && w.message) : [];
     const box = $('warnings');

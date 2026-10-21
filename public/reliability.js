@@ -344,6 +344,14 @@ export function createReliability(h) {
     if (finite(e.origins)) tech.push(['Εβδομαδιαίες αφετηρίες', `${e.origins}${finite(e.skippedOrigins) && e.skippedOrigins > 0 ? ` (${e.skippedOrigins} παραλείφθηκαν: ελάχιστα δεδομένα στην αρχή)` : ''}`]);
     if (range(fit.kappa, 2)) tech.push(['Κλίση Elo (κ): πόσο μετράει η διαφορά βαθμολογίας', range(fit.kappa, 2)]);
     if (range(fit.eta, 2)) tech.push(['Πλεονέκτημα έδρας (η)', range(fit.eta, 2)]);
+    if (e.source === 'own') tech.push(['Βαθμολογίες Elo', 'δικός μας υπολογισμός από αποτελέσματα']);
+    const alt = e.alt && typeof e.alt === 'object' ? e.alt : null;
+    if (alt && alt.status === 'ok' && finite(alt.rps) && finite(alt.ownRps)) {
+      const verdict = alt.better === 'clubelo' ? 'το ClubElo βγήκε καλύτερο' : alt.better === 'own' ? 'το δικό μας Elo βγήκε καλύτερο' : 'ισοδύναμα';
+      tech.push(['Σύγκριση με το ClubElo (RPS)', `δικό μας ${fmtDec(alt.ownRps)} · ClubElo ${fmtDec(alt.rps)} → ${verdict}`]);
+    } else if (alt && alt.status === 'unavailable') {
+      tech.push(['Σύγκριση με το ClubElo', 'το ClubElo δεν απαντά αυτή την εβδομάδα']);
+    }
     if (finite(e.unrated) && e.unrated > 0) tech.push(['Αγώνες χωρίς βαθμολογία Elo και για τις δύο ομάδες', String(e.unrated)]);
 
     return h(

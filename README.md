@@ -28,7 +28,7 @@ No bookmaker odds are used anywhere.
 
 - Goals: Dixon-Coles type Poisson model with ridge shrinkage and exponential time weights; promoted
   teams get an offset. Phase 2 adds an xG proxy from shots (non-negative least squares), an Elo prior
-  (ridge regression on ClubElo ratings for teams with enough matches) and a Bayesian bootstrap (K = 100)
+  (ridge regression on Elo ratings for teams with enough matches) and a Bayesian bootstrap (K = 100)
   that gives the 10 %–90 % ranges shown next to the probabilities.
 - Corners and yellow cards: negative-binomial regression (the over-dispersion is estimated from the data and
   vanishes into a plain Poisson when there is none); the weekly back-test scores it against plain Poisson.
@@ -48,7 +48,7 @@ No bookmaker odds are used anywhere.
   ```
 
   `kappa`, `eta` and a first `c` come from one pooled weighted Poisson regression over the domestic matches of all
-  leagues (monthly ClubElo snapshots, at most 62 days old; `kappa` must lie in [0.2, 2.0]); `c` is then blended with the
+  leagues (monthly Elo snapshots, at most 62 days old; `kappa` must lie in [0.2, 2.0]); `c` is then blended with the
   intercept fitted on the cup's own finished matches of the last two seasons, which gets the weight `W / (W + 100)`
   (`W` = sum of the time weights of those matches). The final is played on neutral ground (`eta = 0`). Goals markets, half-time markets and scorers use the same code as the leagues; there are no corners,
   no cards and no bootstrap ranges, and every match carries the flag `eloOnly` ("χαμηλότερη βεβαιότητα" in the UI).
@@ -59,6 +59,30 @@ No bookmaker odds are used anywhere.
 - The maths uses no language model. Groq only phrases a short Greek comment from numbers the model
   has already computed (`prompts/ai-comment.system.txt`); a reply containing a number that is not in
   its input is discarded and a deterministic Greek template is used instead.
+
+## Own Elo (since Phase 3.1)
+
+api.clubelo.com stopped answering in autumn 2026, so the Elo ratings are computed from the results (`src/model/ownElo.js`,
+`src/pipeline/ownEloData.js`). The classic football Elo:
+
+```
+We = 1 / (1 + 10^(-(R_home - R_away + H) / 400))        H = 100 (0 on neutral ground: the Champions League final)
+R' = R + K * G * (W - We)                                K = 20, W = 1 / 0.5 / 0, start 1500
+G  = 1 (goal difference <= 1), 1.5 (2), (11 + N) / 8 (N >= 3)
+```
+
+- One chronological series of the 90-minute results of the last 5 completed seasons + the current one of every league
+  with a football-data.co.uk file and a club in Europe (the 8 modelled leagues plus B1, T1, G1, SC0), and of every finished
+  Champions League match that football-data.org gives for free. Countries are linked only through the Champions League matches.
+- A club without earlier history starts at (mean of its league) - 100, a club that only plays in the Champions League at
+  (mean of all clubs) - 100; the first clubs of a league series start at 1500.
+- Monthly snapshots (1st of the month, matches strictly before) replace the ClubElo monthly downloads in the weekly tuning
+  and in the pooled regression of the Champions League. A Champions League club with fewer than 6 matches in the history is skipped
+  (warning `thin-history`).
+- The models use ONE source (`ELO_SOURCE`: empty/`own` = our Elo, `clubelo` = the downloaded ratings, repository variable).
+  When ClubElo answers, the daily run reports a cross-check (correlation and mean difference on the common clubs, `index.json` →
+  `elo.check`) and the weekly run repeats the Elo-only proxy back-test with ClubElo's ratings (`report.json` → `eloOnly.alt`),
+  with a non-fatal warning `clubelo-better` if they are clearly better.
 
 ## API-Football (optional extras)
 
@@ -74,8 +98,8 @@ matches within 72 hours, and the previous run's extras are reused for up to 30 h
 |---|---|
 | `public/` | the web page (vanilla ES modules, no dependencies): matches view and reliability view |
 | `src/model/` | goals model, xG proxy, Elo prior, Elo-only model, half-time markets, bootstrap, calibration, corners / cards, scorers, markets, back-test and metrics |
-| `src/sources/` | football-data.org, football-data.co.uk (CSV), ClubElo, API-Football, Groq, team-name aliases and matching |
-| `src/pipeline/` | per-league pipeline, Champions League pipeline, daily refresh, weekly tuning (+ Elo-only proxy back-test), API-Football extras, ClubElo snapshots, tune.json handling, Greek comment step, cache |
+| `src/sources/` | football-data.org, football-data.co.uk (CSV), ClubElo (optional cross-check), API-Football, Groq, team-name aliases and matching |
+| `src/pipeline/` | per-league pipeline, Champions League pipeline, daily refresh, weekly tuning (+ Elo-only proxy back-test), API-Football extras, Elo snapshots, own-Elo data (`ownEloData.js`), tune.json handling, Greek comment step, cache |
 | `scripts/` | `refresh`, `tune`, `check-sources`, `build-aliases`, `data-branch` (fetch / publish), `job-summary` |
 | `prompts/` | the system prompt of the Greek comment |
 | `tests/` | `node --test` suites (maths, sources, pipeline, scripts, UI) |
@@ -100,6 +124,6 @@ Optional environment variables: `GROQ_API_KEY` (Greek comments), `GROQ_MODEL` (d
 
 - Fixtures and top scorers (including the Champions League): Football data provided by the [Football-Data.org](https://www.football-data.org/) API.
 - Historical results, shots, corners, cards, half-time scores and referees: [football-data.co.uk](https://www.football-data.co.uk/) (bookmaker odds columns are ignored).
-- Elo ratings: [clubelo.com](http://clubelo.com/).
+- Elo ratings: computed by the project itself from the match results (no external rating source). [clubelo.com](http://clubelo.com/) is used only for an optional comparison, and is credited in the footer when it is used.
 - Referees and absences (optional): [API-Football](https://www.api-football.com/).
 - Greek comment text (optional): [Groq](https://groq.com/) API, phrasing only.
