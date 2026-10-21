@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Football Probabilities · Πιθανότητες αγώνων</title>
+  <meta name="description" content="Δωρεάν στατιστικές πιθανότητες για τους επόμενους αγώνες των μεγάλων ευρωπαϊκών πρωταθλημάτων και του Champions League: 1Χ2, ημίχρονο/τελικό, γκολ, κόρνερ, κάρτες και σκόρερ.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%BD%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script src="theme-init.js"></script>
+  <script src="config.js" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#app">Μετάβαση στους αγώνες</a>
+
+  <header class="top">
+    <div class="wrap bar-row">
+      <h1><span aria-hidden="true">⚽</span> Football Probabilities</h1>
+      <button id="theme" class="icon-btn" type="button" aria-label="Αλλαγή θέματος"></button>
+    </div>
+    <nav id="views" class="wrap views" aria-label="Προβολές">
+      <button type="button" class="view-btn" data-view="matches" aria-pressed="true">Αγώνες</button>
+      <button type="button" class="view-btn" data-view="reliability" aria-pressed="false">Αξιοπιστία</button>
+    </nav>
+    <nav id="league-nav" class="wrap" aria-label="Πρωταθλήματα">
+      <div id="chips" class="chips"></div>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <div id="banner"></div>
+    <div id="app" aria-busy="true">
+      <p class="loading-note">Φόρτωση…</p>
+      <noscript><p class="loading-note">Η σελίδα χρειάζεται JavaScript για να εμφανίσει τους αγώνες.</p></noscript>
+    </div>
+    <div id="status" class="sr-only" role="status" aria-live="polite"></div>
+  </main>
+
+  <footer class="wrap foot">
+    <p><strong>Στατιστικές εκτιμήσεις, όχι εγγύηση.</strong> Οι πιθανότητες προκύπτουν από μαθηματικό μοντέλο, δεν αποτελούν στοιχηματική συμβουλή και μπορεί να διαφέρουν από την πραγματικότητα.</p>
+    <p>Σκόρερ: δεν υπάρχουν συνθέσεις, οπότε οι πιθανότητες δεν λαμβάνουν υπόψη τραυματισμούς, ποινές ή αν ο παίκτης θα παίξει<span id="foot-absences" hidden> (εκτός από τις απουσίες που δίνει το API-Football, όπου υπάρχουν)</span>.</p>
+    <p id="foot-cl" hidden>Champions League: το μοντέλο βλέπει μόνο τη βαθμολογία Elo των ομάδων (σήμα «χαμηλότερη βεβαιότητα»), χωρίς κόρνερ και κάρτες.</p>
+    <p class="legend">1 = νίκη γηπεδούχου · Χ = ισοπαλία · 2 = νίκη φιλοξενούμενου · GG = σκοράρουν και οι δύο · xG = αναμενόμενα γκολ του μοντέλου. Το μικρό εύρος δίπλα στα ποσοστά (π.χ. 41–51%) δείχνει πόσο αβέβαιη είναι η εκτίμηση του μοντέλου. Ώρες Ελλάδας.</p>
+    <p id="updated" hidden></p>
+    <p>Πηγές δεδομένων: ιστορικά αποτελέσματα, κόρνερ και κάρτες από το <a href="https://www.football-data.co.uk/" target="_blank" rel="noopener noreferrer">football-data.co.uk</a> · αξιολογήσεις Elo από το <a href="http://clubelo.com/" target="_blank" rel="noopener noreferrer">clubelo.com</a><span id="credit-apif" hidden> · διαιτητές και απουσίες από το <a href="https://www.api-football.com/" target="_blank" rel="noopener noreferrer">API-Football</a></span>.</p>
+    <p>Προγράμματα αγώνων και σκόρερ: <span lang="en">Football data provided by the <a href="https://www.football-data.org/" target="_blank" rel="noopener noreferrer">Football-Data.org</a> API</span>.</p>
+    <details id="warnings" hidden>
+      <summary>Ειδοποιήσεις δεδομένων (<span id="warnings-count">0</span>)</summary>
+      <ul id="warnings-list"></ul>
+    </details>
+  </footer>
+</body>
+</html>

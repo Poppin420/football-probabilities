@@ -1,0 +1,21 @@
+{
+  "name": "football-probabilities",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Free, mobile-first tool with model-based football probabilities. Static site on Netlify, computation in GitHub Actions.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "refresh": "node scripts/refresh.mjs",
+    "tune": "node scripts/tune.mjs",
+    "check": "node scripts/check-sources.mjs",
+    "aliases": "node scripts/build-aliases.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}
