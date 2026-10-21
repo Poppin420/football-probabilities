@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BUILTIN_ALIASES_PATH, loadAliases } from '../src/sources/aliases.js';
 import { createResolver } from '../src/sources/names.js';
 
@@ -14,23 +15,31 @@ const write = (name, content) => {
   return file;
 };
 
-test('the built-in file ships with the code and the shipped aliases.json is an empty own list', () => {
+test('the built-in file ships with the code; aliases.json keeps its comment keys and every line the user adds is a well-formed group', () => {
   assert.ok(fs.existsSync(BUILTIN_ALIASES_PATH));
   const builtin = JSON.parse(fs.readFileSync(BUILTIN_ALIASES_PATH, 'utf8'));
   assert.ok(builtin['Man City'] && builtin.Salzburg && builtin['St Gillis'], 'Phase 1 groups and Champions League groups');
-  const own = JSON.parse(fs.readFileSync(new URL('../aliases.json', import.meta.url), 'utf8'));
-  assert.deepEqual(Object.keys(own), ['_help', '_end'], 'a fresh install has no lines of its own yet');
+  // This is the REAL aliases.json of the repository: the owner adds lines to it (SETUP.md step 7), so the test must
+  // accept any number of own lines. It only insists that they are valid, because a broken file is ignored by the program.
+  const ownFile = fileURLToPath(new URL('../aliases.json', import.meta.url));
+  const own = JSON.parse(fs.readFileSync(ownFile, 'utf8'));
+  assert.ok('_help' in own && '_end' in own, 'the comment keys the instructions rely on are still there');
   assert.match(own._help, /aliases\.builtin\.json/);
+  for (const [key, value] of Object.entries(own)) {
+    if (key.startsWith('_')) continue;
+    assert.ok(Array.isArray(value) && value.every((v) => typeof v === 'string' && v.trim()), `"${key}" must be a list of club names`);
+  }
+  assert.deepEqual(loadAliases(ownFile).warnings, [], 'no warning about the owner\'s own lines');
 });
 
-test('the shipped aliases.json stays valid JSON when lines are pasted into the blank line below "_help" (what SETUP.md tells the user to do)', () => {
+test('aliases.json stays valid JSON when lines are pasted right below "_help" (what SETUP.md tells the user to do)', () => {
   const text = fs.readFileSync(new URL('../aliases.json', import.meta.url), 'utf8');
   const lines = text.split('\n');
   const help = lines.findIndex((l) => l.startsWith('  "_help"'));
-  assert.ok(help >= 0 && help < lines.length - 2);
+  const end = lines.findIndex((l) => /^\s+"_end"/.test(l));
+  assert.ok(help >= 0 && end > help, 'the "_help" line comes first and the closing sentinel "_end" after it');
   assert.equal(lines[help].trimEnd().slice(-1), ',', 'the "_help" line ends with a comma');
-  assert.equal(lines[help + 1].trim(), '', 'a blank line follows it');
-  assert.match(lines[help + 2], /^\s+"_end"/, 'the closing sentinel follows the blank line');
+  assert.ok(lines.slice(end + 1).every((l) => l.trim() === '' || l.trim() === '}'), '"_end" is the last entry of the file');
   // paste one line, then two more lines at the same spot, each ending with a comma like the build-aliases output
   const pasted = [...lines];
   pasted.splice(help + 1, 0, '  "Wolves": ["Wolverhampton Wanderers FC"],');
