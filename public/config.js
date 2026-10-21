@@ -6,7 +6,7 @@
 //
 // The page then reads https://raw.githubusercontent.com/OWNER/REPO/data/index.json
 window.FP_CONFIG = {
-  OWNER: 'YOUR_GITHUB_USERNAME',
-  REPO: 'YOUR_REPOSITORY_NAME',
+  OWNER: 'Poppin420',
+  REPO: 'football-probabilities',
   BRANCH: 'data',
 };
