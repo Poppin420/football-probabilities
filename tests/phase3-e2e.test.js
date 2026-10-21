@@ -9,6 +9,9 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildWorld3, startMockServer3, TRUTH, NOW3 } from './mock-world3.js';
 
+// These tests exercise the downloaded-ClubElo path (the mock server serves ClubElo); the own-Elo path has its own tests.
+process.env.ELO_SOURCE = 'clubelo';
+
 const TOKEN = 'test-token';
 const APIF_KEY = 'apif-test';
 const world3 = buildWorld3();

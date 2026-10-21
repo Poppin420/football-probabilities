@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { buildWorld, startMockServer } from './mock-world.js';
 import { fmtDec, fmtPct, fmtSkill, minus, pctSet, rangeText } from '../public/util.js';
 
+// These tests exercise the downloaded-ClubElo path (the mock server serves ClubElo); the own-Elo path has its own tests.
+process.env.ELO_SOURCE = 'clubelo';
+
 let JSDOM = null;
 try {
   ({ JSDOM } = await import('jsdom'));

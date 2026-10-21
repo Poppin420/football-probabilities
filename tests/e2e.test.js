@@ -8,6 +8,9 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildWorld, startMockServer, PROMOTED_2627 } from './mock-world.js';
 
+// These tests exercise the downloaded-ClubElo path (the mock server serves ClubElo); the own-Elo path has its own tests.
+process.env.ELO_SOURCE = 'clubelo';
+
 const TOKEN = 'test-token';
 const world = buildWorld();
 const server = await startMockServer(world);

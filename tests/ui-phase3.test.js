@@ -11,6 +11,9 @@ import { buildWorld3, startMockServer3, NOW3 } from './mock-world3.js';
 import { HTFT_LABELS } from '../public/util.js';
 import { fmtPct, minus, pctSet } from '../public/util.js';
 
+// These tests exercise the downloaded-ClubElo path (the mock server serves ClubElo); the own-Elo path has its own tests.
+process.env.ELO_SOURCE = 'clubelo';
+
 let JSDOM = null;
 try {
   ({ JSDOM } = await import('jsdom'));
@@ -319,4 +322,47 @@ test('external text of the new fields (referee, absent players, stage) is never 
   assert.equal(doc.querySelectorAll('article img, article script').length, 0);
   assert.equal(win.hacked, undefined);
   assert.doesNotMatch(text(cardOf(doc, 'Arsenal', 'Amber Wolves').querySelector('.meta')), /<img/, 'an unknown stage code is not shown at all');
+});
+
+test('footer: own Elo is credited as our own computation, ClubElo only as the comparison (or when its ratings are used)', { skip }, async () => {
+  const hosts = (doc) => [...doc.querySelectorAll('footer a')].filter((a) => !a.closest('[hidden]')).map((a) => new URL(a.href).hostname);
+  const own = clone(FILES);
+  own['index.json'].elo = { source: 'own', clubs: 127, matches: 5576, cupMatches: 83, check: { status: 'ok', n: 118, correlation: 0.934, meanAbsDiff: 41.2, offset: -12 } };
+  const a = await boot({ files: own });
+  assert.equal(a.doc.getElementById('credit-elo-own').hidden, false);
+  assert.equal(a.doc.getElementById('credit-elo-ce').hidden, true);
+  assert.equal(a.doc.getElementById('credit-elo-check').hidden, false);
+  assert.match(text(a.doc.getElementById('credit-elo-check')), /συσχέτιση 0,93 σε 118 ομάδες/);
+  assert.ok(hosts(a.doc).includes('clubelo.com'));
+
+  const noCheck = clone(own);
+  noCheck['index.json'].elo.check = { status: 'unavailable', n: 0, correlation: null };
+  const b = await boot({ files: noCheck });
+  assert.equal(b.doc.getElementById('credit-elo-own').hidden, false);
+  assert.equal(b.doc.getElementById('credit-elo-check').hidden, true);
+  assert.ok(!hosts(b.doc).includes('clubelo.com'));
+
+  const old = clone(FILES);
+  delete old['index.json'].elo; // files of the earlier versions used ClubElo
+  const c = await boot({ files: old });
+  assert.equal(c.doc.getElementById('credit-elo-own').hidden, true);
+  assert.equal(c.doc.getElementById('credit-elo-ce').hidden, false);
+});
+
+test('reliability card of the Elo-only test shows the source and the ClubElo comparison', { skip }, async () => {
+  const rep = {
+    schema: 1, generatedAt: NOW3.toISOString(), window: { seasons: [] }, criteria: { minSkill: 0.08 }, leagues: {}, pooled: null, warnings: [],
+    eloOnly: {
+      source: 'own', leagues: ['PL'], n: 600, scored: 600, origins: 70, skippedOrigins: 0, unrated: 0,
+      fit: {}, metrics: { model: { n: 600, x12: { rps: 0.21, logLoss: 1.0, brier: 0.6 }, ou25: { logLoss: 0.69, brier: 0.25 }, btts: { logLoss: 0.69, brier: 0.25 } }, base: { n: 600, x12: { rps: 0.22, logLoss: 1.05, brier: 0.62 }, ou25: { logLoss: 0.7, brier: 0.25 }, btts: { logLoss: 0.7, brier: 0.25 } } },
+      skill: { vsBase: { rps: 0.04, logLoss1x2: 0.03, ou25: 0.01, btts: 0.01 } }, flags: [],
+      alt: { status: 'ok', n: 600, rps: 0.2, ownRps: 0.21, skillVsBase: 0.09, better: 'clubelo' },
+    },
+  };
+  const files = clone(FILES);
+  files['report.json'] = rep;
+  const { doc } = await boot({ files, hash: '#reliability' });
+  const t = text(doc.getElementById('app'));
+  assert.match(t, /δικός μας υπολογισμός από αποτελέσματα/);
+  assert.match(t, /δικό μας 0,210 · ClubElo 0,200 → το ClubElo βγήκε καλύτερο/);
 });

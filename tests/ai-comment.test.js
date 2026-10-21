@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { buildWorld, startMockServer, groqReply } from './mock-world.js';
 import { largestRemainder } from '../public/format.js';
 
+// These tests exercise the downloaded-ClubElo path (the mock server serves ClubElo); the own-Elo path has its own tests.
+process.env.ELO_SOURCE = 'clubelo';
+
 const world = buildWorld();
 const server = await startMockServer(world);
 process.env.FD_ORG_BASE = `${server.url}/v4`;

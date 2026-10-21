@@ -98,7 +98,7 @@ test('check-sources: a missing token or a dead fixtures endpoint is a required f
 });
 
 test('build-aliases: with the real aliases.json every football-data.org name matches; old clubs missing in Elo are listed', async () => {
-  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token' });
+  const r = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo', FOOTBALL_DATA_TOKEN: 'test-token' });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /✅ football-data\.org vs CSV \+ ClubElo \(decides if fixtures are used\): all 20 names matched/);
   assert.match(r.out, /❌ CSV teams vs ClubElo/);
@@ -111,7 +111,7 @@ test('build-aliases: without any aliases an unmatched fixture name is reported (
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fp-alias-'));
   const empty = path.join(dir, 'aliases.json');
   fs.writeFileSync(empty, '{}');
-  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token', ALIASES_PATH: empty, ALIASES_BUILTIN: 'off' });
+  const r = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo', FOOTBALL_DATA_TOKEN: 'test-token', ALIASES_PATH: empty, ALIASES_BUILTIN: 'off' });
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /NOT matched/);
   assert.match(r.out, /"Wolverhampton Wanderers FC"/);
@@ -126,7 +126,7 @@ test('build-aliases: without any aliases an unmatched fixture name is reported (
 });
 
 test('build-aliases: without a token it still compares CSV and ClubElo and says what it skipped', async () => {
-  const r = await run('build-aliases.mjs');
+  const r = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo' });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /FOOTBALL_DATA_TOKEN is not set: football-data\.org names are not checked/);
   assert.match(r.out, /CSV teams vs ClubElo/);

@@ -108,7 +108,7 @@ test('check-sources (Champions League): a restricted previous season is a warnin
 });
 
 test('build-aliases (Champions League): clubs of every country are compared with ClubElo, the unknown one is listed, exit 1', async () => {
-  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL' });
+  const r = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo', FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL' });
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /\[CL\] Champions League/);
   assert.match(r.out, /❌ football-data\.org vs ClubElo \(decides if matches are used\): 1 of 16 NOT matched/);
@@ -119,9 +119,9 @@ test('build-aliases (Champions League): clubs of every country are compared with
 
 test('build-aliases (Champions League): a similar-looking spelling is accepted but listed for a human check; without a token nothing is compared', async () => {
   // no built-in list, no own list: "Olympiacos FC" is only matched by similarity to "Olympiakos"
-  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL', ALIASES_BUILTIN: 'off', ALIASES_PATH: path.join(os.tmpdir(), 'fp-no-such-aliases.json') });
+  const r = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo', FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL', ALIASES_BUILTIN: 'off', ALIASES_PATH: path.join(os.tmpdir(), 'fp-no-such-aliases.json') });
   assert.match(r.out, /~ "Olympiacos FC" was matched by similarity \(0\.9\d\) to "Olympiakos": check that this is the same club/);
-  const noToken = await run('build-aliases.mjs', { FP_ONLY: 'CL' });
+  const noToken = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo', FP_ONLY: 'CL' });
   assert.equal(noToken.code, 0, noToken.out);
   assert.match(noToken.out, /FOOTBALL_DATA_TOKEN is not set: football-data\.org names are not checked/);
 });
@@ -130,7 +130,25 @@ test('a broken aliases.json is reported by the scripts and never stops them', as
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fp-alias-broken-'));
   const broken = path.join(dir, 'aliases.json');
   fs.writeFileSync(broken, '{ "Man City": ["Manchester City"] "Wolves": ["Wolverhampton"] }'); // a comma is missing
-  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL', ALIASES_PATH: broken });
+  const r = await run('build-aliases.mjs', { ELO_SOURCE: 'clubelo', FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL', ALIASES_PATH: broken });
   assert.match(r.out, /⚠️ +Το aliases\.json δεν είναι έγκυρο JSON .* και αγνοήθηκε/);
   assert.match(r.out, /\[CL\] Champions League/, 'the script went on with the built-in list');
+});
+
+test('build-aliases with our own Elo (the default): no ClubElo request; clubs outside the 12 leagues are listed for information, exit 0', async () => {
+  const before = server.hits.length;
+  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'CL' });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /football-data\.org vs domestic results \(own Elo\): \d+ of 16 clubs have domestic results in the 12 leagues/);
+  assert.match(r.out, /rated from their Champions League matches only .*"Zzyzx FC"/);
+  assert.doesNotMatch(r.out, /NOT matched|SKIPPED/);
+  assert.ok(!server.hits.slice(before).some((h) => /^\/\d{4}-\d{2}-\d{2}$/.test(String(h).split('?')[0])), 'ClubElo was not asked');
+  noSecrets(r.out);
+});
+
+test('build-aliases with our own Elo: a Premier League club of the Championship is known as soon as it is promoted (other division of the country)', async () => {
+  const r = await run('build-aliases.mjs', { FOOTBALL_DATA_TOKEN: 'test-token', FP_ONLY: 'PL' });
+  assert.match(r.out, /✅ football-data\.org vs CSV results \(decides if fixtures are used\): all \d+ names matched/, r.out);
+  assert.doesNotMatch(r.out, /ClubElo/);
+  assert.equal(r.code, 0, r.out);
 });
