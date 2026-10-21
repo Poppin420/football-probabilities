@@ -1,0 +1,75 @@
+# Daily data refresh: downloads the sources, fits the models, writes the JSON
+# files and publishes them to the branch "data" as ONE fresh commit.
+# Nothing generated is ever committed to "main", so Netlify never redeploys.
+name: Ανανέωση δεδομένων
+
+on:
+  schedule:
+    # Times are UTC (Athens is UTC+3 in summer, UTC+2 in winter).
+    # Minute 7 instead of 0: GitHub delays or even drops runs at the top of the hour.
+    - cron: '7 5 * * *'
+    - cron: '7 13 * * *'
+  workflow_dispatch:
+
+# Only one run at a time: every run rewrites the whole "data" branch.
+# A run that is waiting is never cancelled halfway.
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+
+permissions:
+  contents: write # needed to push the branch "data"
+
+jobs:
+  refresh:
+    name: Υπολογισμός και δημοσίευση
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Εγκατάσταση Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      # Previous content of the branch "data" (used as cache and as the
+      # "last good data" when a source is down). Empty on the very first run.
+      - name: Λήψη προηγούμενων δεδομένων
+        run: node scripts/data-branch.mjs fetch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # The step is allowed to fail: even then the last good data are published
+      # (marked "παλιά δεδομένα") and the job is failed in the last step, so
+      # that GitHub e-mails the owner.
+      - name: Υπολογισμός
+        id: refresh
+        continue-on-error: true
+        run: node scripts/refresh.mjs
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }} # Greek match comments (optional; without it the template text is used)
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }} # optional repository variable, default openai/gpt-oss-120b
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }} # optional (Phase 3): referees and absences; without it those extras are simply off
+
+      - name: Σύνοψη αποτελέσματος
+        if: ${{ hashFiles('data-out/index.json') != '' }}
+        run: node scripts/job-summary.mjs
+
+      # Only when the run reached the end and wrote index.json: a crashed run
+      # publishes nothing and the previous data stay online untouched.
+      - name: Δημοσίευση στο branch data
+        if: ${{ hashFiles('data-out/index.json') != '' }}
+        run: node scripts/data-branch.mjs publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Έλεγχος αποτελέσματος
+        if: ${{ steps.refresh.outcome == 'failure' }}
+        run: |
+          echo "::error::Η ανανέωση απέτυχε. Άνοιξε το βήμα «Υπολογισμός» για να δεις τον λόγο. Η σελίδα εμφανίζει τα τελευταία καλά δεδομένα με σήμανση «παλιά δεδομένα»."
+          exit 1
