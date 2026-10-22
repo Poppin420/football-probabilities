@@ -44,3 +44,12 @@ test('euro counts: cards use the mean red rate, unknown / thin clubs give null',
   assert.equal(thin.corners('a1', 'b1'), null);
   assert.equal(createEuroCounts([]).corners('a1', 'b1'), null);
 });
+
+import { createResolver } from '../src/sources/names.js';
+
+test('name matching: a much longer name is not a fuzzy match of a short one (Lillestrom is not Lille)', () => {
+  const r = createResolver({});
+  const universe = new Set([r.key('Lille'), r.key('Lyon')]);
+  assert.equal(r.match('Lillestrom', universe).key, null);
+  assert.equal(r.match('Lille', universe).key, r.key('Lille'));
+});

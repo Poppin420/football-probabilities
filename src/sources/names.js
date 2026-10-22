@@ -76,6 +76,7 @@ export function similarity(a, b) {
 }
 
 export const FUZZY_THRESHOLD = 0.9;
+export const FUZZY_MIN_LENGTH_RATIO = 0.8;
 
 /**
  * aliases: { "Display name": ["alias", ...], ... } (the aliases.json format).
@@ -114,6 +115,8 @@ export function createResolver(aliases = {}) {
     if (universe.has(k)) return { key: k, how: resolved && resolved !== raw ? 'alias' : 'exact' };
     const scored = [];
     for (const u of universe) {
+      // A much longer / shorter name is a different club (Lillestrom is not Lille), however high the score.
+      if (Math.min(k.length, u.length) / Math.max(k.length, u.length) < FUZZY_MIN_LENGTH_RATIO) continue;
       const s = similarity(k, u);
       if (s >= FUZZY_THRESHOLD) scored.push({ key: u, score: s });
     }
