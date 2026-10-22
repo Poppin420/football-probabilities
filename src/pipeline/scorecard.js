@@ -9,6 +9,7 @@ import { calibrationBins, logLoss1x2, rps } from '../model/metrics.js';
 export const SCORECARD_SCHEMA = 1;
 export const KEEP_DAYS = 400; // scored matches older than this are dropped
 export const WAIT_DAYS = 10; // a started match whose result never shows up is dropped after this
+export const RECENT = 80; // finished matches listed on the page (view "Αποτελέσματα")
 export const MIN_FOR_SKILL = 20; // fewer scored matches: numbers are shown but no skill is claimed
 const DAY_MS = 86400000;
 const CUPS = new Set(['CL', 'EL']);
@@ -98,6 +99,8 @@ function scoreOne(p, r) {
     names: p.names,
     p: p.p,
     o: r.x > r.y ? 0 : r.x === r.y ? 1 : 2,
+    x: r.x,
+    y: r.y,
     goals: r.x + r.y,
     ou25: p.ou25,
     btts: p.btts,
@@ -172,5 +175,11 @@ export function buildScorecard(store, { now, lost = 0 }) {
     all: statsOf(done),
     domestic: statsOf(done.filter((d) => !CUPS.has(d.code))),
     leagues,
+    // the newest finished matches with our forecast, for the page
+    recent: done
+      .filter((d) => Number.isInteger(d.x) && Number.isInteger(d.y))
+      .sort((a, b) => b.kickoff.localeCompare(a.kickoff) || a.k.localeCompare(b.k))
+      .slice(0, RECENT)
+      .map((d) => ({ code: d.code, kickoff: d.kickoff, names: d.names, p: d.p, x: d.x, y: d.y })),
   };
 }

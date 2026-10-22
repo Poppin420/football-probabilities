@@ -864,3 +864,40 @@ test('report: the scorecard of real results appears when the file exists, an emp
   assert.ok(!/Πραγματικά αποτελέσματα/.test(text(c.doc.getElementById('app'))));
   assert.match(text(c.doc.getElementById('app')), /Πόσο αξιόπιστες είναι οι πιθανότητες;/);
 });
+
+test('results view: finished matches with the forecast and the verdict; empty and missing files explain themselves', { skip }, async () => {
+  const scFile = (recent, extra = {}) => ({ schema: 1, generatedAt: '2026-10-22T10:00:00Z', scored: recent.length, pending: 2, recent, ...extra });
+  const m = (names, p, x, y, kickoff, code = 'PL') => ({ code, kickoff, names, p, x, y });
+  const files = clone(FILES);
+  files['scorecard.json'] = scFile([
+    m(['Arsenal', 'Chelsea'], [0.55, 0.25, 0.2], 2, 1, '2026-10-17T14:00:00Z'),
+    m(['Wolves', 'Brighton'], [0.2, 0.25, 0.55], 1, 0, '2026-10-17T14:00:00Z'),
+    m(['Celtic', 'Porto'], [0.4, 0.3, 0.3], 1, 1, '2026-10-16T19:00:00Z', 'CL'),
+  ]);
+  const a = await boot({ files, hash: '#results' });
+  const t = text(a.doc.getElementById('app'));
+  assert.match(t, /Αποτελέσματα και προβλέψεις/);
+  assert.match(t, /Arsenal 2–1 Chelsea/);
+  assert.equal(a.doc.querySelectorAll('.res-card').length, 3);
+  assert.equal(a.doc.querySelectorAll('.res-verdict.ok').length, 1); // Arsenal only: the Wolves favourite lost, the draw was not the favourite
+  assert.equal(a.doc.querySelectorAll('.res-verdict.miss').length, 2);
+  assert.match(t, /Το φαβορί βγήκε ✓/);
+  assert.match(t, /σε 1 \(33%\)/);
+  assert.equal(a.doc.querySelector('.view-btn[data-view="results"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(a.doc.getElementById('league-nav').hidden, true);
+
+  const none = clone(FILES);
+  none['scorecard.json'] = scFile([]);
+  const b = await boot({ files: none, hash: '#results' });
+  assert.match(text(b.doc.getElementById('app')), /Δεν υπάρχουν ακόμα τελειωμένοι αγώνες/);
+  const missing = await boot({ files: clone(FILES), hash: '#results' });
+  assert.match(text(missing.doc.getElementById('app')), /Δεν υπάρχουν ακόμα δεδομένα αποτελεσμάτων/);
+
+  // the button switches views and the matches come back
+  a.doc.querySelector('.view-btn[data-view="matches"]').click();
+  await settle(a.win);
+  assert.equal(cards(a.doc).length, 9);
+  a.doc.querySelector('.view-btn[data-view="results"]').click();
+  await settle(a.win);
+  assert.equal(a.doc.querySelectorAll('.res-card').length, 3);
+});

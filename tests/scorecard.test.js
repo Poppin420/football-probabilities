@@ -44,6 +44,7 @@ test('forecast of a match not started yet is stored (the latest wins); a started
   assert.equal(r.scorecard.pending, 0);
   const s = r.scorecard.leagues.PL;
   assert.equal(s.hit, 0); // the draw was not the favourite
+  assert.deepEqual(r.scorecard.recent, [{ code: 'PL', kickoff: '2026-10-21T19:00:00Z', names: ['Arsenal', 'Chelsea'], p: [0.6, 0.25, 0.15], x: 2, y: 2 }]);
   assert.ok(Math.abs(s.rps - (0.5 * (0.6 ** 2 + (0.85 - 1) ** 2))) < 1e-9);
   assert.equal(s.skill, null, 'one match: no skill is claimed');
   assert.deepEqual([s.corners.mae, s.corners.n], [Math.abs(10.2 - 11), 1]);

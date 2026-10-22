@@ -239,7 +239,8 @@ export function parseView(hash) {
   } catch {
     raw = '';
   }
-  return raw.toLowerCase() === 'reliability' ? 'reliability' : 'matches';
+  const v = raw.toLowerCase();
+  return v === 'reliability' || v === 'results' ? v : 'matches';
 }
 
 // ------------------------------------------------------- report numbers ----

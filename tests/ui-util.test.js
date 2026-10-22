@@ -158,7 +158,9 @@ test('agoText and ageHours', () => {
   assert.equal(ageHours(undefined, NOW), null);
 });
 
-test('parseView: only #reliability opens the report; empty, unknown or broken hashes mean the matches', () => {
+test('parseView: only #reliability and #results open their view; empty, unknown or broken hashes mean the matches', () => {
+  assert.equal(parseView('#results'), 'results');
+  assert.equal(parseView('#Results'), 'results');
   assert.equal(parseView('#reliability'), 'reliability');
   assert.equal(parseView('#Reliability'), 'reliability');
   assert.equal(parseView('reliability'), 'reliability');

@@ -1311,3 +1311,76 @@ details.rel-sub[open] {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* ------------------------------------------------- results view ---- */
+.res-card {
+  margin: 0 0 10px;
+  padding: 10px 12px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.res-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.res-verdict {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.res-verdict.ok {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.res-verdict.miss {
+  background: var(--bad-bg);
+  color: var(--bad-text);
+}
+
+.res-teams {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.res-teams span:first-child {
+  text-align: right;
+}
+
+.res-score {
+  font-size: 1.15rem;
+  padding: 0 6px;
+}
+
+.res-bar {
+  display: flex;
+  gap: 2px;
+  font-size: 0.78rem;
+}
+
+.res-seg {
+  flex-basis: 0;
+  min-width: 2.6em;
+  padding: 3px 4px;
+  text-align: center;
+  background: var(--track);
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.res-seg.hit {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}

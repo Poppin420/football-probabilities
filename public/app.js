@@ -12,6 +12,7 @@ import {
 import { num } from './format.js';
 import { TABS, createViews, makeH, safeId } from './views.js';
 import { createReliability } from './reliability.js';
+import { createResults } from './results.js';
 import { createLive } from './live.js';
 
 const STORE_LEAGUE = 'fp-league';
@@ -52,6 +53,7 @@ export function createApp({
   const h = makeH(doc);
   const views = createViews(h);
   const reliability = createReliability(h);
+  const results = createResults(h);
   const liveView = createLive(h);
   const $ = (id) => doc.getElementById(id);
 
@@ -60,7 +62,8 @@ export function createApp({
     index: null,
     leagues: new Map(), // code -> { status: 'loading' | 'ok' | 'error', data, error }
     selected: 'ALL',
-    view: 'matches', // 'matches' | 'reliability'
+    view: 'matches', // 'matches' | 'reliability' | 'results'
+    scorecard: { status: 'idle', data: null }, // scorecard.json (view "Αποτελέσματα")
     report: { status: 'idle', data: null, error: null }, // report.json of the weekly back-test
     open: new Set(),
     tabs: new Map(),
@@ -151,6 +154,42 @@ export function createApp({
       })
       .then(scheduleRender);
     return rec;
+  }
+
+  /** scorecard.json for the view "Αποτελέσματα"; a missing file just means "no data yet". */
+  function ensureScorecard({ force = false } = {}) {
+    const known = state.scorecard;
+    if (!force && (known.status === 'loading' || known.status === 'ok')) return known;
+    const rec = { status: 'loading', data: null };
+    state.scorecard = rec;
+    getJson('scorecard.json')
+      .then((sc) => {
+        rec.data = sc && typeof sc === 'object' && !Array.isArray(sc) ? sc : null;
+      })
+      .catch(() => {
+        rec.data = null;
+      })
+      .then(() => {
+        rec.status = 'ok';
+        scheduleRender();
+      });
+    return rec;
+  }
+
+  function renderResults() {
+    const app = $('app');
+    $('banner').replaceChildren();
+    const rec = state.scorecard;
+    if (rec.status !== 'ok') {
+      app.replaceChildren(skeleton());
+      app.setAttribute('aria-busy', 'true');
+      $('status').textContent = '';
+      return;
+    }
+    const names = Object.fromEntries((state.index?.leagues || []).filter((l) => l && l.code && l.name).map((l) => [l.code, l.name]));
+    app.replaceChildren(...results.resultsContent(rec.data, { names, now: nowFn() }));
+    app.removeAttribute('aria-busy');
+    $('status').textContent = 'Αποτελέσματα και προβλέψεις';
   }
 
   // ------------------------------------------------------------ messages --
@@ -426,6 +465,7 @@ export function createApp({
     if (!state.index) return;
     renderLive();
     if (state.view === 'reliability') return renderReliability();
+    if (state.view === 'results') return renderResults();
     const now = nowFn();
     const codes = shownCodes();
     const loaded = [];
@@ -525,24 +565,25 @@ export function createApp({
 
   /** Buttons "Αγώνες | Αξιοπιστία" and the league chips follow the current view. */
   function applyViewUi() {
-    const rel = state.view === 'reliability';
+    const rel = state.view !== 'matches';
     for (const b of $('views')?.querySelectorAll('.view-btn') || []) b.setAttribute('aria-pressed', b.dataset.view === state.view ? 'true' : 'false');
     const nav = $('league-nav');
     if (nav) nav.hidden = rel;
   }
 
   function setView(view, { push = true } = {}) {
-    state.view = view === 'reliability' ? 'reliability' : 'matches';
+    state.view = view === 'reliability' || view === 'results' ? view : 'matches';
     applyViewUi();
     if (push) {
       try {
         const keep = state.selected === 'ALL' ? win.location.pathname + win.location.search : `#${state.selected}`;
-        win.history.replaceState(null, '', state.view === 'reliability' ? '#reliability' : keep);
+        win.history.replaceState(null, '', state.view === 'reliability' ? '#reliability' : state.view === 'results' ? '#results' : keep);
       } catch {
         /* history not available: the view still works */
       }
     }
     if (state.view === 'reliability') ensureReport();
+    else if (state.view === 'results') ensureScorecard();
     else for (const c of shownCodes()) ensureLeague(c);
     renderMain();
     try {
@@ -559,8 +600,9 @@ export function createApp({
 
   /** The URL hash decides the view: #reliability, or a league code / nothing for the matches. */
   function applyHash() {
-    if (parseView(win.location.hash) === 'reliability') {
-      if (state.view !== 'reliability') setView('reliability', { push: false });
+    const hashView = parseView(win.location.hash);
+    if (hashView !== 'matches') {
+      if (state.view !== hashView) setView(hashView, { push: false });
       return;
     }
     state.view = 'matches';
@@ -725,10 +767,10 @@ export function createApp({
     const fromHash = parseHash(win.location.hash, codes);
     const saved = storage.get(STORE_LEAGUE);
     const initial = fromHash !== 'ALL' ? fromHash : codes.includes(saved) ? saved : 'ALL';
-    if (parseView(win.location.hash) === 'reliability') {
+    if (parseView(win.location.hash) !== 'matches') {
       state.selected = initial; // the league to come back to
       markChips();
-      setView('reliability', { push: false });
+      setView(parseView(win.location.hash), { push: false });
     } else {
       state.view = 'matches';
       applyViewUi();
@@ -740,6 +782,7 @@ export function createApp({
     state.open.clear();
     state.tabs.clear();
     state.report = { status: 'idle', data: null, error: null };
+    state.scorecard = { status: 'idle', data: null };
     return loadIndex();
   }
 
