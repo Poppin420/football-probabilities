@@ -56,6 +56,8 @@ jobs:
           GROQ_MODEL: ${{ vars.GROQ_MODEL }} # optional repository variable, default openai/gpt-oss-120b
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }} # optional (Phase 3): referees and absences; without it those extras are simply off
           ELO_SOURCE: ${{ vars.ELO_SOURCE }} # optional repository variable: empty = our own Elo (default), "clubelo" = the downloaded ClubElo ratings
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }} # optional: the Europa League source (RapidAPI); without it the Europa League is skipped
+          ELO_TIERS: ${{ vars.ELO_TIERS }} # optional repository variable: "on" = the second tiers (League One, ...) also feed our Elo
 
       - name: Σύνοψη αποτελέσματος
         if: ${{ hashFiles('data-out/index.json') != '' }}
