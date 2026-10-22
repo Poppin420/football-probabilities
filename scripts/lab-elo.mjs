@@ -17,6 +17,13 @@ try {
   });
   const md = renderLab(lab);
   console.log(md);
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    // the key numbers also as an annotation, readable on the run page without opening the summary
+    const pc = (x) => (typeof x === 'number' ? `${(x * 100).toFixed(1)}%` : '-');
+    const v = lab.variants;
+    const line = ['noElo', 'ownElo', 'ownEloTiers'].map((k) => `${k} ${pc(v[k].all.rps)} (promoted ${pc(v[k].promoted.rps)}, established ${pc(v[k].established.rps)}, n ${v[k].all.n})`).join(' | ');
+    console.log(`::notice title=Lab ${lab.league}::${line} | ceiling ${pc(lab.ceiling.rps)}`);
+  }
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${md}\n`);
 } catch (err) {
   console.error(`Lab failed: ${err.stack || err.message}`);
