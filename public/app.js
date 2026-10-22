@@ -376,7 +376,11 @@ export function createApp({
     const panel = $('live');
     if (!panel) return;
     const data = state.live.data;
-    liveView.render(panel, data, liveLookup, { stale: state.live.failed >= 3 });
+    if (!state.live.base) {
+      panel.hidden = true;
+      return;
+    }
+    liveView.render(panel, data, liveLookup, { stale: state.live.failed >= 3, unavailable: !data && state.live.failed >= 1 });
     if ($('foot-live')) $('foot-live').hidden = !data;
   }
 

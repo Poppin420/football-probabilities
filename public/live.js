@@ -53,13 +53,27 @@ export function createLive(h) {
    * @param {{matches:object[], updatedAt:string}|null} live
    * @param {(code:string, id:number) => object|null} lookup  the forecast of a match, from the loaded league files
    */
-  function render(panel, live, lookup, { stale = false } = {}) {
+  function render(panel, live, lookup, { stale = false, unavailable = false } = {}) {
     const list = Array.isArray(live?.matches) ? live.matches : [];
-    panel.hidden = list.length === 0;
-    if (list.length === 0) {
+    const upd0 = live?.updatedAt ? new Date(live.updatedAt) : null;
+    const time0 = upd0 && !Number.isNaN(upd0.getTime()) ? upd0.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Athens' }) : null;
+    if (!live && unavailable) {
+      // the file does not exist (yet): say so, so that it is clear where the panel is and what is missing
+      panel.hidden = false;
+      panel.replaceChildren(h('div', { class: 'lv-box lv-empty' }, h('span', { class: 'lv-dot', 'aria-hidden': 'true' }), 'Παίζουν τώρα: δεν υπάρχουν δεδομένα ακόμα (τρέξε μία φορά το workflow «Live αγώνες» στο GitHub).'));
+      return;
+    }
+    if (!live) {
+      panel.hidden = true;
       panel.replaceChildren();
       return;
     }
+    if (list.length === 0) {
+      panel.hidden = false;
+      panel.replaceChildren(h('div', { class: 'lv-box lv-empty' }, h('span', { class: 'lv-dot', 'aria-hidden': 'true' }), `Παίζουν τώρα: κανένας αγώνας αυτή τη στιγμή${time0 ? ` (ενημέρωση ${time0})` : ''}`));
+      return;
+    }
+    panel.hidden = false;
     const playing = list.filter((m) => m.state !== 'finished').length;
     const upd = live.updatedAt ? new Date(live.updatedAt) : null;
     const time = upd && !Number.isNaN(upd.getTime()) ? upd.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Athens' }) : null;
