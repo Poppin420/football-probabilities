@@ -58,6 +58,7 @@ jobs:
         run: node scripts/tune.mjs
         env:
           ELO_SOURCE: ${{ vars.ELO_SOURCE }} # optional repository variable: empty = our own Elo (default), "clubelo" = the downloaded ClubElo ratings
+          ELO_TIERS: ${{ vars.ELO_TIERS }} # optional repository variable: "on" = the second tiers (League One, ...) also feed our Elo
 
       - name: Σύνοψη αποτελέσματος
         if: ${{ hashFiles('data-out/report.json') != '' }}
