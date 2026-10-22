@@ -409,6 +409,51 @@ export function createReliability(h) {
     );
   }
 
+  // ------------------------------------------------------- real results --
+  const CUP_NAMES = { CL: 'Champions League', EL: 'Europa League' };
+
+  /** scorecard.json: forecasts written down before the match, scored against the real result. */
+  function scorecardSection(sc, report) {
+    if (!sc || typeof sc !== 'object' || sc.schema !== 1) return null;
+    const title = 'Πραγματικά αποτελέσματα (από τότε που ξεκίνησε η καταγραφή)';
+    const scored = finite(sc.scored) ? sc.scored : 0;
+    const pending = finite(sc.pending) ? sc.pending : 0;
+    if (scored === 0) {
+      return block(
+        title,
+        note(`Κάθε πρόβλεψη αποθηκεύεται πριν από τον αγώνα και βαθμολογείται όταν υπάρχει το αποτέλεσμα. Δεν υπάρχουν ακόμα βαθμολογημένοι αγώνες${pending > 0 ? ` (${pending} περιμένουν το αποτέλεσμά τους)` : ''}.`),
+      );
+    }
+    const names = (code) => CUP_NAMES[code] || get(report, 'leagues', code, 'name') || code;
+    const leagues = Object.entries(sc.leagues && typeof sc.leagues === 'object' ? sc.leagues : {}).filter(([, v]) => v && finite(v.n));
+    const row = (label, v, sub = null) => ({
+      label,
+      sub,
+      cells: [String(v.n), pc0(v.hit), fmtDec(v.rps, 3), finite(v.skill) ? fmtSkill(v.skill) : 'λίγοι αγώνες', fmtDec(v.logLoss, 3)],
+    });
+    const rows = leagues.map(([code, v]) => row(names(code), v));
+    if (sc.domestic && finite(sc.domestic.n) && leagues.filter(([c]) => !CUP_NAMES[c]).length > 1) rows.unshift(row('Όλα τα πρωταθλήματα', sc.domestic, 'σύνολο'));
+    const out = [
+      table('Αποτελέσματα 1Χ2 των αγώνων που έχουν ολοκληρωθεί', ['Διοργάνωση', 'Αγώνες', 'Σωστό φαβορί', 'RPS', 'Έναντι βασικών συχνοτήτων', 'Log-loss'], rows),
+      note(`Από ${sc.since || DASH} έως ${sc.last || DASH}: ${scored} αγώνες βαθμολογημένοι${pending > 0 ? `, ${pending} περιμένουν το αποτέλεσμά τους` : ''}. «Έναντι βασικών συχνοτήτων» δείχνει πόσο καλύτερο είναι το μοντέλο από μια πρόβλεψη που δίνει σε κάθε αγώνα τα ίδια ποσοστά νίκης/ισοπαλίας/ήττας (υπολογισμένα από το ίδιο δείγμα). Με λίγους αγώνες οι αριθμοί αλλάζουν πολύ από εβδομάδα σε εβδομάδα και δεν δείχνουν ακόμα τίποτα σίγουρο.`),
+    ];
+    const cal = sc.domestic?.calibration ?? sc.all?.calibration;
+    if (Array.isArray(cal) && cal.length > 0) {
+      out.push(
+        table(
+          'Πόσο συχνά βγήκε ό,τι είπε το μοντέλο',
+          ['Πιθανότητα που είπε το μοντέλο', 'Περιπτώσεις', 'Μέσο που είπε', 'Πόσο συχνά βγήκε'],
+          cal.filter((b) => b && finite(b.n)).map((b) => ({ label: `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%`, cells: [String(b.n), pc0(b.p), pc0(b.f)] })),
+        ),
+        note('Αν το μοντέλο λέει «60%», περίπου 6 στις 10 φορές πρέπει να βγαίνει. Κάθε αγώνας μετράει τρεις φορές εδώ (νίκη, ισοπαλία, ήττα).'),
+      );
+    }
+    const cnt = (v) => (v && finite(v.n) ? `μέσο λάθος ${fmtDec(v.mae, 2)} (μέσο πραγματικό ${fmtDec(v.meanActual, 1)}, ${v.n} αγώνες)` : null);
+    const extra = [['Κόρνερ', cnt(sc.domestic?.corners)], ['Κάρτες', cnt(sc.domestic?.cards)]].filter(([, t]) => t);
+    if (extra.length > 0) out.push(note(`Σύνολο κόρνερ και καρτών στα πρωταθλήματα: ${extra.map(([k, t]) => `${k}: ${t}`).join(' · ')}. Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν στοιχεία κόρνερ/καρτών για έλεγχο.`));
+    return block(title, ...out);
+  }
+
   function explainer() {
     const item = (term, text) => h('li', null, h('b', null, term), ` — ${text}`);
     return h(
@@ -429,7 +474,7 @@ export function createReliability(h) {
   }
 
   /** The whole view as an array of nodes. */
-  function reportContent(report, { now }) {
+  function reportContent(report, { now, scorecard = null }) {
     const minSkill = finite(get(report, 'criteria', 'minSkill')) ? report.criteria.minSkill : 0.08;
     const leagues = Object.entries(report.leagues && typeof report.leagues === 'object' ? report.leagues : {});
     const age = ageHours(report.generatedAt, now);
@@ -480,6 +525,7 @@ export function createReliability(h) {
     if (!cup) {
       out.push(note('Το Champions League δεν ελέγχεται εδώ: οι πιθανότητές του προκύπτουν μόνο από τη βαθμολογία Elo των ομάδων (χωρίς πλήρες μοντέλο επιθέσεων/άμυνας), γι’ αυτό φέρουν την ένδειξη «χαμηλότερη βεβαιότητα».'));
     }
+    out.push(scorecardSection(scorecard, report));
     out.push(calibrationLayer(report));
 
     const win = report.window || {};

@@ -26,7 +26,7 @@ const execFileAsync = promisify(execFile);
 const BOT_NAME = 'github-actions[bot]';
 const BOT_EMAIL = '41898282+github-actions[bot]@users.noreply.github.com';
 const FORBIDDEN_BRANCHES = new Set(['main', 'master', 'HEAD']);
-const OPTIONAL_JSON = ['tune.json', 'report.json', 'ai-cache.json'];
+const OPTIONAL_JSON = ['tune.json', 'report.json', 'ai-cache.json', 'scorecard.json'];
 
 const README = `# Branch "data"
 

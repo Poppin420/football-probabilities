@@ -756,7 +756,7 @@ test('report: missing, unreachable, broken or newer files give a clear message w
   a.doc.querySelector('#app .retry').click();
   await settle(a.win);
   assert.match(text(a.doc.getElementById('app')), /Πόσο αξιόπιστες είναι οι πιθανότητες;/);
-  assert.deepEqual(a.calls.slice(callsBefore), [REPORT_URL], 'only report.json is requested again');
+  assert.deepEqual(a.calls.slice(callsBefore), [REPORT_URL, REPORT_URL.replace('report.json', 'scorecard.json')], 'only the report and its scorecard are requested again');
 
   // network down
   const net = await boot({ files: { ...clone(FILES), 'report.json': null }, hash: '#reliability' });
@@ -838,4 +838,29 @@ test('analysis tab: Phase 2 rows (xG, Elo prior, bootstrap, calibration, setting
   assert.ok(t2.includes('Αυτόματο κείμενο από πρότυπο'));
   assert.ok(!t2.includes('xG-proxy'));
   assert.ok(t2.includes('Διόρθωση χαμηλών σκορ (ρ)'));
+});
+
+test('report: the scorecard of real results appears when the file exists, an empty one says so, a missing one adds nothing', { skip }, async () => {
+  const bins = [{ lo: 0.5, hi: 0.6, n: 40, p: 0.55, f: 0.5 }];
+  const stats = (n) => ({ n, hit: 0.5, rps: 0.2, rpsBase: 0.23, skill: 0.13, logLoss: 1.0, outcomes: { home: 0.4, draw: 0.3, away: 0.3 }, ou25: null, btts: null, calibration: bins, corners: { n: 20, mae: 2.5, bias: 0.1, meanActual: 10.2 }, cards: null });
+  const sc = { schema: 1, generatedAt: '2026-10-22T10:00:00Z', since: '2026-10-22', last: '2026-11-05', scored: 52, pending: 3, lost: 0, all: stats(52), domestic: stats(40), leagues: { PL: stats(30), ELC: stats(10), CL: stats(12) } };
+  const files = healthyReport();
+  files['scorecard.json'] = sc;
+  const a = await boot({ files, hash: '#reliability' });
+  const t = text(a.doc.getElementById('app'));
+  assert.match(t, /Πραγματικά αποτελέσματα/);
+  assert.match(t, /Champions League/);
+  assert.match(t, /Όλα τα πρωταθλήματα/);
+  assert.match(t, /52 αγώνες βαθμολογημένοι, 3 περιμένουν/);
+  assert.match(t, /\+13,0%/);
+  assert.match(t, /μέσο λάθος 2,50/);
+
+  const zero = healthyReport();
+  zero['scorecard.json'] = { ...sc, scored: 0, all: null, domestic: null, leagues: {} };
+  const b = await boot({ files: zero, hash: '#reliability' });
+  assert.match(text(b.doc.getElementById('app')), /Δεν υπάρχουν ακόμα βαθμολογημένοι αγώνες \(3 περιμένουν/);
+
+  const c = await boot({ files: healthyReport(), hash: '#reliability' });
+  assert.ok(!/Πραγματικά αποτελέσματα/.test(text(c.doc.getElementById('app'))));
+  assert.match(text(c.doc.getElementById('app')), /Πόσο αξιόπιστες είναι οι πιθανότητες;/);
 });

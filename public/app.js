@@ -132,8 +132,18 @@ export function createApp({
       .then((data) => {
         if (!data || typeof data !== 'object' || Array.isArray(data) || typeof data.leagues !== 'object' || data.leagues === null) throw fail('format');
         if (data.schema !== 1) throw fail(typeof data.schema === 'number' && data.schema > 1 ? 'schema' : 'format');
-        rec.status = 'ok';
         rec.data = data;
+        // the scorecard is optional (older data branches do not have it): a missing or broken file just hides the block
+        return getJson('scorecard.json')
+          .then((sc) => {
+            rec.scorecard = sc && typeof sc === 'object' && !Array.isArray(sc) ? sc : null;
+          })
+          .catch(() => {
+            rec.scorecard = null;
+          })
+          .then(() => {
+            rec.status = 'ok';
+          });
       })
       .catch((err) => {
         rec.status = 'error';
@@ -361,7 +371,7 @@ export function createApp({
       $('status').textContent = '';
       return;
     }
-    app.replaceChildren(...reliability.reportContent(rec.data, { now: nowFn() }));
+    app.replaceChildren(...reliability.reportContent(rec.data, { now: nowFn(), scorecard: rec.scorecard ?? null }));
     app.removeAttribute('aria-busy');
     $('status').textContent = 'Αναφορά αξιοπιστίας';
   }

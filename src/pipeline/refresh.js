@@ -26,6 +26,7 @@ import { loadAliases } from '../sources/aliases.js';
 import { sleep } from '../sources/http.js';
 import { compareRatings } from '../model/ownElo.js';
 import { buildOwnElo } from './ownEloData.js';
+import { updateScorecard } from './scorecard.js';
 import { estimateHalfShare } from '../model/htft.js';
 import { buildLeague } from './league.js';
 import { buildChampionsLeague } from './championsLeague.js';
@@ -353,6 +354,26 @@ export async function runRefresh({
     aiCache = readJsonIfExists(path.join(prevDir, 'ai-cache.json')); // keep what we had
   }
   for (const f of builtLeagues) writeJson(path.join(outDir, f.file), f.json);
+  try {
+    // the scorecard: today's forecasts are written down, finished matches are scored (it never changes a forecast)
+    const results = { domestic: new Map(), cups: new Map() };
+    for (const league of domestic) {
+      const csv = fetched.get(league.code)?.csvAll;
+      if (csv) results.domestic.set(league.code, [...csv.bySeason.values()].flat().map((r) => ({ ...r, home: resolver.key(r.home), away: resolver.key(r.away) })));
+    }
+    for (const c of cups) results.cups.set(c.code, (fetched.get(c.code)?.cupResults ?? []).filter((p) => p.season === 'current').flatMap((p) => p.results));
+    const sc = updateScorecard({ prev: cache.peek('predictions'), built: builtLeagues, results, resolver, now });
+    cache.put('predictions', sc.store);
+    writeJson(path.join(outDir, 'scorecard.json'), sc.scorecard);
+    logger.log(`[scorecard] ${sc.scorecard.scored} matches scored, ${sc.scorecard.pending} waiting for their result`);
+  } catch (err) {
+    logger.error(`[scorecard] ${err.message}`);
+    const kept = cache.peek('predictions');
+    if (kept) cache.put('predictions', kept);
+    const old = readJsonIfExists(path.join(prevDir, 'scorecard.json'));
+    if (old) writeJson(path.join(outDir, 'scorecard.json'), old);
+    warnings.push({ code: 'scorecard-failed', message: `Βαθμολόγηση προβλέψεων: απρόσμενο σφάλμα (${err.message}) - κρατήθηκαν τα προηγούμενα νούμερα.` });
+  }
   if (aiCache) writeJson(path.join(outDir, 'ai-cache.json'), aiCache);
 
   // Files this job does not regenerate must travel with the new orphan commit:

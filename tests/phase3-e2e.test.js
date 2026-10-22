@@ -287,6 +287,13 @@ test('second run (PL + CL): snapshots and completed seasons are cached, PL gets 
   assert.deepEqual(readCache(r.outDir, 'apif-usage'), { day: '2026-10-18', calls: 5, disabled: null }, 'the counter accumulates over the day');
   assert.ok(!r.index.warnings.some((w) => w.code === 'apif-no-match'), JSON.stringify(r.index.warnings));
 
+  // the scorecard writes the forecasts down before the matches (nothing is scored yet: the fixtures are in the future)
+  const sc = readJson(r.outDir, 'scorecard.json');
+  assert.equal(sc.schema, 1);
+  assert.equal(sc.scored, 0);
+  assert.ok(sc.pending >= 10, `pending ${sc.pending}`);
+  const stored = readCache(r.outDir, 'predictions');
+  assert.ok(stored.open && Object.keys(stored.open).some((k) => k.startsWith('PL:')) && Object.keys(stored.open).some((k) => k.startsWith('CL:')));
   // both clubs play in a modelled league (PL): corners and cards exist; a club without one gets none
   const clm = r.league('CL').matches;
   const acm = clm.find((m) => m.home === 'arsenal' && m.away === 'man city');
