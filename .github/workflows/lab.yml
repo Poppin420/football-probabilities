@@ -1,0 +1,40 @@
+# Elo laboratory (read-only): compares our own Elo without / with the second tiers (League One, 2. Bundesliga, ...)
+# for the Championship and prints the numbers in the run summary. It publishes NOTHING and changes nothing:
+# you start it by hand (Actions -> this workflow -> Run workflow) and send the summary back.
+# It needs no secrets: only public CSV files and the cache of the branch "data".
+name: Εργαστήριο Elo (μόνο ανάγνωση)
+
+on:
+  workflow_dispatch:
+
+# Reads the branch "data" (does not write it); sharing the lock keeps it from reading in the middle of a publish.
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  lab:
+    name: Εργαστήριο Elo
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Εγκατάσταση Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Λήψη προηγούμενων δεδομένων
+        run: node scripts/data-branch.mjs fetch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Εργαστήριο
+        run: node scripts/lab-elo.mjs
