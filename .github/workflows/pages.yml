@@ -1,0 +1,47 @@
+# Publishes the web page (the folder "public") on GitHub Pages: free, and it does not use Netlify credits.
+# Runs when something inside "public" changes on the branch main, or by hand (Actions -> Run workflow).
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions" (steps in SETUP.md).
+name: Σελίδα στο GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Δημοσίευση της σελίδας
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Ρύθμιση του Pages
+        uses: actions/configure-pages@v5
+
+      - name: Ανέβασμα του φακέλου public
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Δημοσίευση
+        id: deployment
+        uses: actions/deploy-pages@v4
