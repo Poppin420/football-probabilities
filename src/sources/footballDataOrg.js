@@ -120,7 +120,15 @@ export function createFdOrgClient({
     }
   }
 
-  return { request, fixtures, scorers, teams, results, state };
+  /**
+   * Matches of all competitions of the plan between two dates (one request): used by the live panel.
+   * The free plan shows scores with a delay, so what comes back lags a little behind the real match.
+   */
+  async function matchesBetween(from, to) {
+    return parseLive(await request('/matches', { dateFrom: from, dateTo: to }));
+  }
+
+  return { request, fixtures, scorers, teams, results, matchesBetween, state };
 }
 
 function dedupe(list) {
@@ -269,4 +277,33 @@ export function parseTeams(json) {
 export function sampleOf(item, max = 500) {
   const s = JSON.stringify(item);
   return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+/** Normalise a /matches response for the live panel (any status). Matches without two known teams are dropped. */
+export function parseLive(json) {
+  if (!json || !Array.isArray(json.matches)) {
+    throw new SourceFormatError(`football-data.org /matches: no "matches" array (keys: ${describeKeys(json)})`);
+  }
+  const num = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+  const matches = [];
+  for (const m of json.matches) {
+    const home = teamRef(m.homeTeam);
+    const away = teamRef(m.awayTeam);
+    const kickoff = typeof m.utcDate === 'string' ? new Date(m.utcDate) : null;
+    if (!home || !away || !kickoff || Number.isNaN(kickoff.getTime()) || m.id === undefined) continue;
+    matches.push({
+      id: m.id,
+      code: m.competition?.code || null,
+      competition: m.competition?.name || null,
+      status: m.status || null,
+      minute: num(m.minute),
+      injuryTime: num(m.injuryTime),
+      kickoff: kickoff.toISOString(),
+      lastUpdated: typeof m.lastUpdated === 'string' ? m.lastUpdated : null,
+      home: { id: home.id, name: home.name, shortName: home.shortName },
+      away: { id: away.id, name: away.name, shortName: away.shortName },
+      score: { home: num(m.score?.fullTime?.home), away: num(m.score?.fullTime?.away), htHome: num(m.score?.halfTime?.home), htAway: num(m.score?.halfTime?.away) },
+    });
+  }
+  return { matches };
 }

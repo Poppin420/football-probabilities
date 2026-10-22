@@ -129,7 +129,7 @@ export function staleInfo(league, now) {
 }
 
 export const BADGE_HELP = {
-  eloOnly: 'Στο Champions League οι ομάδες δεν έχουν κοινό ιστορικό. Το μοντέλο χρησιμοποιεί μόνο τη διαφορά βαθμολογίας Elo των δύο ομάδων: δεν ξέρει φόρμα, απουσίες ή στυλ παιχνιδιού, άρα οι πιθανότητες είναι πιο αβέβαιες από των εγχώριων πρωταθλημάτων.',
+  eloOnly: 'Στις ευρωπαϊκές διοργανώσεις οι ομάδες δεν έχουν κοινό ιστορικό. Το μοντέλο χρησιμοποιεί μόνο τη διαφορά βαθμολογίας Elo των δύο ομάδων: δεν ξέρει φόρμα, απουσίες ή στυλ παιχνιδιού, άρα οι πιθανότητες είναι πιο αβέβαιες από των εγχώριων πρωταθλημάτων.',
   promoted: 'Η ομάδα ανέβηκε φέτος κατηγορία ή είναι νέα στα δεδομένα. Οι δυνάμεις της εκτιμώνται με περιορισμένο ιστορικό και μια προσεκτική προ-εκτίμηση (prior).',
   fewData: 'Η ομάδα έχει λίγους πρόσφατους αγώνες στα δεδομένα, άρα η εκτίμηση για αυτήν είναι πιο αβέβαιη.',
   lowConfidence: 'Πολύ λίγα δεδομένα για μία από τις ομάδες: οι πιθανότητες είναι ιδιαίτερα αβέβαιες.',
@@ -311,4 +311,43 @@ export function dataBase(config) {
 /** Only plain file names like "PL.json" are fetched. */
 export function safeFile(name) {
   return typeof name === 'string' && /^[A-Za-z0-9_-]+\.json$/.test(name) ? name : null;
+}
+
+/** Where live.json lives: LIVE_URL, or the branch "live" (LIVE_BRANCH) of the same repository. A custom DATA_URL without LIVE_URL has no panel. */
+export function liveBase(config) {
+  if (!config || typeof config !== 'object') return null;
+  if (typeof config.LIVE_URL === 'string' && config.LIVE_URL) return config.LIVE_URL.replace(/\/+$/, '');
+  if (typeof config.DATA_URL === 'string' && config.DATA_URL) return null;
+  const good = (v) => typeof v === 'string' && SAFE.test(v) && !PLACEHOLDER.test(v);
+  if (!good(config.OWNER) || !good(config.REPO)) return null;
+  const branch = good(config.LIVE_BRANCH) ? config.LIVE_BRANCH : 'live';
+  return `https://raw.githubusercontent.com/${config.OWNER}/${config.REPO}/${branch}`;
+}
+
+/** 'home' | 'draw' | 'away' for a score; null while the score is unknown. */
+export function outcomeOfScore(score) {
+  if (!score || !Number.isInteger(score.home) || !Number.isInteger(score.away)) return null;
+  return score.home > score.away ? 'home' : score.home < score.away ? 'away' : 'draw';
+}
+
+/** The most probable result of a 1X2 forecast: { key, p } or null. */
+export function favouriteOf(oneX2) {
+  if (!oneX2) return null;
+  let best = null;
+  for (const key of ['home', 'draw', 'away']) {
+    const p = oneX2[key];
+    if (Number.isFinite(p) && (!best || p > best.p)) best = { key, p };
+  }
+  return best;
+}
+
+/**
+ * Is the most probable result of the model what the match shows right now (or ended with)?
+ * -> 'on' (it holds now), 'off' (it does not), 'won' / 'lost' (match over), null (no forecast or no score).
+ */
+export function liveVerdict(fav, score, state) {
+  const now = outcomeOfScore(score);
+  if (!fav || !now) return null;
+  if (state === 'finished') return fav.key === now ? 'won' : 'lost';
+  return fav.key === now ? 'on' : 'off';
 }

@@ -55,7 +55,7 @@ after(() => dom.forEach((d) => d.window.close()));
 
 function fakeFetch(files) {
   return async (url) => {
-    const v = files[String(url).split('/').pop()];
+    const v = files[String(url).split('?')[0].split('/').pop()];
     if (v === undefined) return new Response('404: Not Found', { status: 404 });
     return new Response(JSON.stringify(v), { status: 200 });
   };
@@ -188,8 +188,8 @@ test('goals tab: first-half goals with the share of goals of the league', { skip
 test('Champions League: corners and cards are explained, not faked; the Premier League keeps both', { skip }, async () => {
   const { doc } = await boot();
   const cl = cardOf(doc, 'Arsenal', 'Amber Wolves');
-  assert.match(text(openTab(cl, 'Κόρνερ')), /Στο Champions League δεν υπάρχουν κόρνερ/);
-  assert.match(text(openTab(cl, 'Κάρτες')), /Στο Champions League δεν υπάρχουν κάρτες/);
+  assert.match(text(openTab(cl, 'Κόρνερ')), /Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κόρνερ/);
+  assert.match(text(openTab(cl, 'Κάρτες')), /Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κάρτες/);
   const pl = cardOf(doc, 'Arsenal', 'Chelsea');
   assert.match(text(openTab(pl, 'Κόρνερ')), /Αναμενόμενα κόρνερ/);
   assert.match(text(openTab(pl, 'Κάρτες')), /Αναμενόμενες κάρτες/);
@@ -254,7 +254,7 @@ test('analysis tab (Champions League): Elo-only model rows and the explanation o
   assert.ok(tech.includes(`Εγχώριοι αγώνες για την κλίση ${e.pooledMatches}`));
   assert.ok(tech.includes(`Αγώνες Champions League για το επίπεδο γκολ ${e.cupMatches} (βάρος ${Math.round(e.cupWeight * 100)}%)`));
   assert.ok(tech.includes(`Μερίδιο γκολ στο α' ημίχρονο ${Math.round(FILES['CL.json'].params.halfShare.s * 100)}%`));
-  assert.match(text(regular), /χαμηλότερη βεβαιότητα — Στο Champions League οι ομάδες δεν έχουν κοινό ιστορικό/);
+  assert.match(text(regular), /χαμηλότερη βεβαιότητα — Στις ευρωπαϊκές διοργανώσεις οι ομάδες δεν έχουν κοινό ιστορικό/);
   assert.match(text(regular), /βαθμολογία Elo/);
   assert.match(text(regular.querySelector('.analysis')), /Elo/);
 
@@ -365,4 +365,43 @@ test('reliability card of the Elo-only test shows the source and the ClubElo com
   const t = text(doc.getElementById('app'));
   assert.match(t, /δικός μας υπολογισμός από αποτελέσματα/);
   assert.match(t, /δικό μας 0,210 · ClubElo 0,200 → το ClubElo βγήκε καλύτερο/);
+});
+
+test('live panel: a match being played shows the score, the forecast and whether the favourite is holding', { skip }, async () => {
+  const pl = FILES['PL.json'].matches[0];
+  const x = pl.goals.oneX2;
+  const fav = ['home', 'draw', 'away'].reduce((b, k) => (x[k] > x[b] ? k : b), 'home');
+  const score = fav === 'away' ? { home: 0, away: 1 } : fav === 'draw' ? { home: 1, away: 1 } : { home: 2, away: 0 };
+  const opposite = fav === 'home' ? { home: 0, away: 3 } : { home: 3, away: 0 };
+  const live = (sc, state = 'live') => ({ schema: 1, updatedAt: '2026-10-18T10:05:00Z', matches: [{ id: pl.id, code: 'PL', competition: 'Premier League', state, minute: 63, injuryTime: null, kickoff: pl.kickoff, home: 'Home FC', away: 'Away FC', score: { ...sc, htHome: 0, htAway: 0 } }] });
+
+  const a = await boot({ files: { ...clone(FILES), 'live.json': live(score) } });
+  const panel = a.doc.getElementById('live');
+  assert.equal(panel.hidden, false);
+  const t = text(panel);
+  assert.match(t, /Παίζουν τώρα \(1\)/);
+  assert.match(t, /63'/);
+  assert.match(t, new RegExp(`${score.home}–${score.away}`));
+  assert.match(t, /Πρόβλεψη|1 \d+% · Χ \d+% · 2 \d+%/);
+  assert.match(t, /βγαίνει τώρα ✓/);
+  assert.equal(a.doc.getElementById('foot-live').hidden, false);
+
+  const b = await boot({ files: { ...clone(FILES), 'live.json': live(opposite) } });
+  assert.match(text(b.doc.getElementById('live')), /δεν βγαίνει τώρα/);
+
+  const c = await boot({ files: { ...clone(FILES), 'live.json': live(score, 'finished') } });
+  assert.match(text(c.doc.getElementById('live')), /Τέλος/);
+  assert.match(text(c.doc.getElementById('live')), /βγήκε ✓/);
+  const d = await boot({ files: { ...clone(FILES), 'live.json': live(opposite, 'finished') } });
+  assert.match(text(d.doc.getElementById('live')), /δεν βγήκε ✗/);
+});
+
+test('live panel: no file / nothing playing keeps the panel hidden and the page working', { skip }, async () => {
+  const none = await boot();
+  assert.equal(none.doc.getElementById('live').hidden, true);
+  assert.ok(cards(none.doc).length > 0);
+  const empty = await boot({ files: { ...clone(FILES), 'live.json': { schema: 1, updatedAt: '2026-10-18T10:05:00Z', matches: [] } } });
+  assert.equal(empty.doc.getElementById('live').hidden, true);
+  const unknown = await boot({ files: { ...clone(FILES), 'live.json': { schema: 1, updatedAt: '2026-10-18T10:05:00Z', matches: [{ id: 1, code: 'XX', competition: 'Other', state: 'live', minute: 10, kickoff: '2026-10-18T09:00:00Z', home: 'A', away: 'B', score: { home: 0, away: 0 } }] } } });
+  assert.match(text(unknown.doc.getElementById('live')), /Δεν υπάρχει πρόβλεψη/);
 });

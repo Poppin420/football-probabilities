@@ -10,6 +10,7 @@ export const BASES = {
   elo: env.ELO_BASE || 'http://api.clubelo.com',
   groq: env.GROQ_BASE || 'https://api.groq.com/openai/v1',
   apiFootball: env.API_FOOTBALL_BASE || 'https://v3.football.api-sports.io',
+  rapidEuropa: env.RAPID_EL_BASE || 'https://uefa-europa-league.p.rapidapi.com',
 };
 
 /**
@@ -28,11 +29,21 @@ export const LEAGUES = [
   { code: 'PPL', div: 'P1', name: 'Primeira Liga', country: 'Πορτογαλία', eloCountry: 'POR', eloLevel: 1, afId: 94, phase: 1, enabled: true },
   // Phase 3: Elo-only model (ClubElo difference only), no domestic history of its own.
   { code: 'CL', div: null, name: 'Champions League', country: 'Ευρώπη', afId: 2, eloOnly: true, phase: 3, enabled: true },
+  // Europa League: same Elo-only model. Its data come from the RapidAPI listing (football-data.org's free plan does not have it).
+  // Optional: without RAPIDAPI_KEY (or when the source fails) it is skipped with a note.
+  { code: 'EL', div: null, name: 'Europa League', country: 'Ευρώπη', eloOnly: true, optional: true, source: 'rapid', phase: 3, enabled: true },
   // Goals-only CSV leagues; football-data.org's free tier has no fixtures for them.
   { code: 'B1', div: 'B1', name: 'Jupiler League', country: 'Βέλγιο', eloCountry: 'BEL', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
   { code: 'T1', div: 'T1', name: 'Süper Lig', country: 'Τουρκία', eloCountry: 'TUR', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
   { code: 'G1', div: 'G1', name: 'Super League', country: 'Ελλάδα', eloCountry: 'GRE', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
   { code: 'SC0', div: 'SC0', name: 'Premiership', country: 'Σκωτία', eloCountry: 'SCO', eloLevel: 1, phase: 9, enabled: false, reason: 'no free fixture source' },
+  // Second (and third) tiers: only the results are read, to rate the clubs that move between divisions.
+  // They feed our own Elo only when ELO_TIERS=on (see eloPoolLeagues); the lab job (scripts/lab-elo.mjs) tests whether that helps.
+  { code: 'E2', div: 'E2', name: 'League One', country: 'Αγγλία', eloCountry: 'ENG', eloLevel: 3, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
+  { code: 'D2', div: 'D2', name: '2. Bundesliga', country: 'Γερμανία', eloCountry: 'GER', eloLevel: 2, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
+  { code: 'I2', div: 'I2', name: 'Serie B', country: 'Ιταλία', eloCountry: 'ITA', eloLevel: 2, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
+  { code: 'SP2', div: 'SP2', name: 'La Liga 2', country: 'Ισπανία', eloCountry: 'ESP', eloLevel: 2, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
+  { code: 'F2', div: 'F2', name: 'Ligue 2', country: 'Γαλλία', eloCountry: 'FRA', eloLevel: 2, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
 ];
 
 export const CURRENT_PHASE = 3;
@@ -56,8 +67,8 @@ export function cupLeagues(only = null) {
  * `div` and an `eloCountry`. Only the enabled leagues are modelled; the others just give the Elo of their clubs
  * (they play the Champions League) a history.
  */
-export function eloPoolLeagues() {
-  return LEAGUES.filter((l) => l.div && l.eloCountry);
+export function eloPoolLeagues({ withTiers = env.ELO_TIERS === 'on' } = {}) {
+  return LEAGUES.filter((l) => l.div && l.eloCountry && (withTiers || !l.tier));
 }
 
 /** Own Elo (src/model/ownElo.js): how much history is read. */

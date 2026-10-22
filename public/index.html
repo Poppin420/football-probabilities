@@ -31,6 +31,8 @@
     </nav>
   </header>
 
+  <aside id="live" class="live" hidden aria-label="Αγώνες που παίζονται τώρα"></aside>
+
   <main class="wrap">
     <div id="banner"></div>
     <div id="app" aria-busy="true">
@@ -47,6 +49,8 @@
     <p class="legend">1 = νίκη γηπεδούχου · Χ = ισοπαλία · 2 = νίκη φιλοξενούμενου · GG = σκοράρουν και οι δύο · xG = αναμενόμενα γκολ του μοντέλου. Το μικρό εύρος δίπλα στα ποσοστά (π.χ. 41–51%) δείχνει πόσο αβέβαιη είναι η εκτίμηση του μοντέλου. Ώρες Ελλάδας.</p>
     <p id="updated" hidden></p>
     <p>Πηγές δεδομένων: ιστορικά αποτελέσματα, κόρνερ και κάρτες από το <a href="https://www.football-data.co.uk/" target="_blank" rel="noopener noreferrer">football-data.co.uk</a> · <span id="credit-elo-own">βαθμολογίες Elo: δικός μας υπολογισμός από τα αποτελέσματα των αγώνων</span><span id="credit-elo-ce" hidden>αξιολογήσεις Elo από το <a href="http://clubelo.com/" target="_blank" rel="noopener noreferrer">clubelo.com</a></span><span id="credit-elo-check" hidden></span><span id="credit-apif" hidden> · διαιτητές και απουσίες από το <a href="https://www.api-football.com/" target="_blank" rel="noopener noreferrer">API-Football</a></span>.</p>
+    <p id="foot-el" hidden>Europa League: προγράμματα και αποτελέσματα από το <a href="https://football-api.yuvron.online/" target="_blank" rel="noopener noreferrer">football-api.yuvron.online</a> (RapidAPI)· μόνο μοντέλο Elo, χωρίς κόρνερ και κάρτες.</p>
+    <p id="foot-live" hidden>Παράθυρο «Παίζουν τώρα»: σκορ με μικρή καθυστέρηση από το δωρεάν πλάνο του football-data.org· ενημερώνεται περίπου κάθε 5 λεπτά.</p>
     <p>Προγράμματα αγώνων και σκόρερ: <span lang="en">Football data provided by the <a href="https://www.football-data.org/" target="_blank" rel="noopener noreferrer">Football-Data.org</a> API</span>.</p>
     <details id="warnings" hidden>
       <summary>Ειδοποιήσεις δεδομένων (<span id="warnings-count">0</span>)</summary>

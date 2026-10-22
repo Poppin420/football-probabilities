@@ -17,6 +17,7 @@ process.env.FD_ORG_BASE = `${server.url}/v4`;
 process.env.FD_CSV_BASE = `${server.url}/mmz4281`;
 process.env.ELO_BASE = server.url;
 process.env.API_FOOTBALL_BASE = `${server.url}/apif`;
+process.env.RAPID_EL_BASE = `${server.url}/rapid`;
 process.env.FD_ORG_MIN_INTERVAL_MS = '0';
 process.env.CSV_PAUSE_MS = '0';
 process.env.HTTP_BACKOFF_MS = '0';
@@ -161,4 +162,40 @@ test('weekly tuning, ClubElo answering again: the same proxy test with its ratin
   assert.ok(alt.n >= 100 && Number.isFinite(alt.rps) && Number.isFinite(alt.ownRps), JSON.stringify(alt));
   assert.ok(['own', 'clubelo', 'equal'].includes(alt.better));
   assert.equal(report.eloOnly.source, 'own'); // the model itself keeps using ONE source
+});
+
+test('Europa League (RapidAPI): skipped with a note without a key, with a wrong key or when the source is down; produced when it answers', async () => {
+  const run = async (env) => {
+    const out = tmp('el');
+    const res = await runRefresh({ env: { FOOTBALL_DATA_TOKEN: TOKEN, ...env }, prevDir: tmp('empty'), outDir: out, aliasesPath: ALIASES, now: NOW3, logger: quiet, only: ['CL', 'EL'] });
+    return { res, out, index: readJson(out, 'index.json') };
+  };
+  for (const [label, env, behaviour] of [['no key', {}, 'ok'], ['wrong key', { RAPIDAPI_KEY: 'nope' }, 'ok'], ['source down', { RAPIDAPI_KEY: 'rapid-test' }, 'down']]) {
+    server.set({ ...defaults, el: behaviour });
+    const r = await run(env);
+    assert.equal(r.res.exitCode, 0, label);
+    assert.equal(r.index.leagues.find((l) => l.code === 'CL').status, 'ok', label);
+    assert.equal(r.index.leagues.find((l) => l.code === 'EL'), undefined, `${label}: no tab and no error entry for an optional competition`);
+    assert.ok(r.index.warnings.some((w) => w.code === 'optional-unavailable' && w.league === 'EL'), label);
+    assert.ok(!fs.existsSync(path.join(r.out, 'EL.json')), label);
+  }
+  server.set({ ...defaults, el: 'ok' });
+  const before = server.state.rapidCalls || 0;
+  const b = await run({ RAPIDAPI_KEY: 'rapid-test' });
+  assert.equal(b.res.exitCode, 0);
+  const el = b.index.leagues.find((l) => l.code === 'EL');
+  assert.ok(el && el.status === 'ok' && el.eloOnly === true, JSON.stringify(el));
+  const elJson = readJson(b.out, 'EL.json');
+  assert.ok(elJson.matches.length > 0);
+  assert.match(elJson.notes.eloOnly, /^Στο Europa League/);
+  assert.equal(b.index.sources.rapidEuropa.status, 'ok');
+  assert.match(b.index.sources.rapidEuropa.detail, /480 left this month/);
+  const used = (server.state.rapidCalls || 0) - before;
+  assert.ok(used <= 3, `calls to the metered source: ${used}`); // fixtures + this season + last season
+  // the second run the same day reuses the cached results: only the fixtures are asked again
+  const prev = b.out;
+  const mid = server.state.rapidCalls;
+  const again = tmp('el2');
+  await runRefresh({ env: { FOOTBALL_DATA_TOKEN: TOKEN, RAPIDAPI_KEY: 'rapid-test' }, prevDir: prev, outDir: again, aliasesPath: ALIASES, now: new Date(NOW3.getTime() + 3600000), logger: quiet, only: ['CL', 'EL'] });
+  assert.equal(server.state.rapidCalls - mid, 1, 'only the fixtures are requested again');
 });

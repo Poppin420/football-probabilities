@@ -1157,3 +1157,149 @@ details.rel-sub[open] {
     transition: none !important;
   }
 }
+
+/* ------------------------------------------------- live panel (Παίζουν τώρα) -- */
+.live {
+  margin: 8px auto 0;
+  max-width: 760px;
+  padding: 0 16px;
+}
+
+.lv-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px 12px;
+}
+
+.lv-box summary {
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lv-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--draw);
+  flex: none;
+}
+
+.lv-dot.on {
+  background: #d92d20;
+  animation: lv-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes lv-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.lv-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.lv-card {
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.86rem;
+}
+
+.lv-card.finished {
+  opacity: 0.8;
+}
+
+.lv-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.lv-state {
+  color: var(--text);
+}
+
+.lv-card.live .lv-state {
+  color: #d92d20;
+}
+
+.lv-score {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.lv-t:last-child {
+  text-align: right;
+}
+
+.lv-s {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.lv-probs,
+.lv-verdict,
+.lv-note,
+.lv-foot {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.lv-verdict {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lv-verdict.on b,
+.lv-verdict.won b {
+  color: var(--ok-text);
+  background: var(--ok-bg);
+  border-radius: 6px;
+  padding: 0 6px;
+}
+
+.lv-verdict.off b,
+.lv-verdict.lost b {
+  color: var(--bad-text);
+  background: var(--bad-bg);
+  border-radius: 6px;
+  padding: 0 6px;
+}
+
+.lv-foot {
+  margin-top: 8px;
+}
+
+/* wide screens: a small window on the right side, next to the matches */
+@media (min-width: 1100px) {
+  .live {
+    position: fixed;
+    top: 96px;
+    right: 16px;
+    width: 280px;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    z-index: 5;
+  }
+}

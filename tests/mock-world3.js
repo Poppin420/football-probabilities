@@ -246,6 +246,7 @@ export function buildWorld3({ seed = 303 } = {}) {
 /**
  * Start the combined server. Behaviour (server.set):
  *   apif: 'ok' | 'plan' | 'quota' | 'rate1' | 'down'      apifRemaining: account requests left at the start (header)
+ *   el: 'ok' (default: the Europa League source serves the Champions League data under another name; the key must be 'rapid-test') | 'down'
  *   clFixtures / clResults: 'ok' | 500                    clPrevious: 'ok' | 403 (previous season restricted)
  *   eloStatus: daily ClubElo snapshot status (200 | 500)  eloMonthly: 'ok' | 500 (snapshots of the first of a month)
  *   eloSubset: 'few' -> ClubElo rates only the English and the foreign clubs
@@ -272,8 +273,22 @@ export async function startMockServer3(world3, initial = {}) {
       if (!text) return answer(404, 'not found', 'text/plain');
       return answer(200, Buffer.from(text, 'latin1'), 'text/csv');
     }
-    if ((m = /^\/v4\/competitions\/CL\/(matches|scorers|teams)$/.exec(p))) {
+    if (p === '/rapid/matches') {
+      // the Europa League source (RapidAPI listing): the Champions League data under another name
+      if (req.headers['x-rapidapi-key'] !== 'rapid-test' || !req.headers['x-rapidapi-host']) return answer(403, { message: 'You are not subscribed to this API.' });
+      if (behaviour.el === 'down') return answer(500, { error: { code: 'internal', message: 'down' } });
+      state.rapidCalls = (state.rapidCalls || 0) + 1;
+      const team = (t) => ({ id: t.id, slug: null, name: t.name, shortName: t.shortName, code: t.tla, crestUrl: 'x' });
+      const asRapid = (x, status, withScore) => ({ id: 880000 + x.id, competition: 'uefa-europa-league', season: '2026-27', stage: x.stage === 'LEAGUE_STAGE' ? 'League phase' : x.stage, round: x.matchday ?? null, kickoff: x.utcDate, status, minute: null, homeTeam: team(x.homeTeam), awayTeam: team(x.awayTeam), score: withScore ? { home: x.score?.fullTime?.home ?? null, away: x.score?.fullTime?.away ?? null } : { home: null, away: null }, venue: null });
+      const season = url.searchParams.get('season');
+      const finished = url.searchParams.get('status') === 'finished';
+      const list = finished ? (season === '2026-27' ? world3.currentResults : world3.previousResults).map((x) => asRapid(x, 'finished', true)) : world3.fixtures.map((x) => asRapid(x, 'scheduled', false));
+      return answer(200, { data: list, meta: { season: season || '2026-27', page: 1, limit: 200, total: list.length } }, 'application/json', { 'x-ratelimit-requests-remaining': '480', 'x-ratelimit-requests-limit': '500' });
+    }
+    if ((m = /^\/v4\/competitions\/(CL|EL)\/(matches|scorers|teams)$/.exec(p))) {
       if (req.headers['x-auth-token'] !== 'test-token') return answer(403, { message: 'bad token' });
+      if (m[1] === 'EL') return answer(403, { message: 'The resource you are looking for is restricted and apparently not within your permissions.' });
+      m = [m[0], m[2]];
       const hdr = { 'x-requests-available-minute': '9', 'x-requestcounter-reset': '60' };
       const season = url.searchParams.get('season');
       if (m[1] === 'teams') {
@@ -325,6 +340,6 @@ export async function startMockServer3(world3, initial = {}) {
     }
     return false;
   };
-  const server = await startMockServer(world3.base, { apif: 'ok', apifRemaining: 100, eloMonthly: 'ok', clFixtures: 'ok', clResults: 'ok', clPrevious: 'ok', ...initial }, handle);
+  const server = await startMockServer(world3.base, { apif: 'ok', apifRemaining: 100, eloMonthly: 'ok', clFixtures: 'ok', clResults: 'ok', clPrevious: 'ok', el: 'ok', ...initial }, handle);
   return { ...server, state };
 }

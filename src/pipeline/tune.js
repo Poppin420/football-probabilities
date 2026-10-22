@@ -115,7 +115,7 @@ export function coordinateSearch({ evaluate, defaults = PHASE2_DEFAULTS, grid = 
 // -------------------------------------------------------------------- data --
 
 /** All matches of a league for the given season start years, with team keys and season tags. */
-async function loadHistory({ league, years, cache, now, resolver, logger, sleepFn, fetchCsv, state }) {
+export async function loadHistory({ league, years, cache, now, resolver, logger, sleepFn, fetchCsv, state }) {
   const rows = [];
   const missing = [];
   const completedFrom = seasonStartYear(now);

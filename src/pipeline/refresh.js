@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CURRENT_PHASE, LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, cupLeagues, currentTime, dayNumber, domesticLeagues, eloPoolLeagues, isoDate, seasonStartYear } from '../config.js';
 import { createFdOrgClient, sampleOf } from '../sources/footballDataOrg.js';
+import { createRapidEuropaClient } from '../sources/rapidEuropa.js';
 import { fetchSeasonCsv } from '../sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../sources/clubElo.js';
 import { createResolver } from '../sources/names.js';
@@ -130,14 +131,24 @@ export async function runRefresh({
       fetched.set(league.code, { error: err });
     }
   }
+  // The Europa League has its own source (RapidAPI, 500 calls a month on the free plan); everything else uses football-data.org.
+  const rapidKey = env.RAPIDAPI_KEY || '';
+  const rapid = rapidKey ? createRapidEuropaClient({ key: rapidKey, logger }) : null;
   for (const league of cups) {
     try {
-      if (!client) throw new Error('FOOTBALL_DATA_TOKEN is not set');
-      const fx = await client.fixtures(league.code, { now, horizonDays: MODEL.horizonDays });
-      sources.footballDataOrg = { status: 'ok', detail: `${client.state.calls} calls` };
-      if (fx.fixtures[0]) logSample(`football-data.org ${league.code} fixture`, sampleOf(fx.fixtures[0]));
-      const cupResults = await loadCupResults({ client, league, seasonYear, cache, now, logSample, logger, warnings });
-      const scorers = await loadScorers({ client, league, seasonYear, cache, now, logSample, logger, warnings });
+      const isRapid = league.source === 'rapid';
+      const src = isRapid ? rapid : client;
+      if (!src) throw new Error(isRapid ? 'RAPIDAPI_KEY is not set' : 'FOOTBALL_DATA_TOKEN is not set');
+      const fx = await src.fixtures(league.code, { now, horizonDays: MODEL.horizonDays });
+      if (isRapid) {
+        sources.rapidEuropa = { status: 'ok', detail: `${src.state.calls} calls${src.state.remaining !== null ? `, ${src.state.remaining} left this month` : ''}` };
+      } else {
+        sources.footballDataOrg = { status: 'ok', detail: `${client.state.calls} calls` };
+      }
+      if (fx.fixtures[0]) logSample(`${league.code} fixture`, sampleOf(fx.fixtures[0]));
+      const cupResults = await loadCupResults({ client: src, league, seasonYear, cache, now, logSample, logger, warnings });
+      const scorers = isRapid ? { current: null, previous: null } : await loadScorers({ client: src, league, seasonYear, cache, now, logSample, logger, warnings }); // the Europa League source has no scorers
+      if (isRapid) sources.rapidEuropa = { status: 'ok', detail: `${src.state.calls} calls${src.state.remaining !== null ? `, ${src.state.remaining} left this month` : ''}` };
       fetched.set(league.code, { fx, cupResults, scorers });
     } catch (err) {
       fetched.set(league.code, { error: err });
@@ -158,7 +169,8 @@ export async function runRefresh({
       }
     }
     let cupHistory = [];
-    if (cups.length > 0) cupHistory = await loadCupHistory({ client, league: cups[0], seasonYear, cache, now, logger });
+    const mainCup = cups.find((c) => c.code === 'CL'); // older seasons only for the Champions League (the free plan has them)
+    if (mainCup) cupHistory = await loadCupHistory({ client, league: mainCup, seasonYear, cache, now, logger });
     const leagueRows = [];
     for (const league of eloPoolLeagues()) {
       const csv = fetched.get(league.code)?.csvAll ?? extraCsv.get(league.code);
@@ -276,6 +288,12 @@ export async function runRefresh({
     const entry = newEntry(league);
     try {
       const d = fetched.get(league.code);
+      if (d.error && league.optional && !fs.existsSync(path.join(prevDir, `${league.code}.json`))) {
+        // an optional competition the plan does not give: no tab at all, one note
+        logger.log(`[${league.code}] not available (${d.error.message}) - skipped`);
+        warnings.push({ league: league.code, code: 'optional-unavailable', message: `${league.name}: δεν είναι διαθέσιμο (${String(d.error.message).slice(0, 120)}) - παραλείπεται.` });
+        continue;
+      }
       if (d.error) throw d.error;
       if (!elo) throw new Error(own ? 'δεν υπάρχουν αποτελέσματα για να υπολογιστεί το Elo (χρειάζεται για το μοντέλο Elo)' : 'το ClubElo δεν είναι διαθέσιμο (χρειάζεται για το μοντέλο Elo)');
       const pool = await buildPool({ fetched, seasons, resolver, cache, now, sources, logSample, logger, warnings, eloBudgetMs, ownSnaps: ownElo?.snaps ?? null });

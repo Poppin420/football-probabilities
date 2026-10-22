@@ -222,7 +222,7 @@ export function createViews(h) {
 
   function cornersTab({ m }) {
     const c = m.corners;
-    if (!c && m.flags?.eloOnly) return [empty('Στο Champions League δεν υπάρχουν κόρνερ: οι ομάδες δεν έχουν κοινό ιστορικό και το μοντέλο βλέπει μόνο τη βαθμολογία Elo.')];
+    if (!c && m.flags?.eloOnly) return [empty('Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κόρνερ: οι ομάδες δεν έχουν κοινό ιστορικό και το μοντέλο βλέπει μόνο τη βαθμολογία Elo.')];
     if (!c) return [empty('Δεν υπάρχουν αρκετά δεδομένα για κόρνερ σε αυτό το πρωτάθλημα.')];
     const hn = m.homeName;
     const an = m.awayName;
@@ -260,7 +260,7 @@ export function createViews(h) {
 
   function cardsTab({ m }) {
     const c = m.cards;
-    if (!c && m.flags?.eloOnly) return [empty('Στο Champions League δεν υπάρχουν κάρτες: οι ομάδες δεν έχουν κοινό ιστορικό και το μοντέλο βλέπει μόνο τη βαθμολογία Elo.')];
+    if (!c && m.flags?.eloOnly) return [empty('Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κάρτες: οι ομάδες δεν έχουν κοινό ιστορικό και το μοντέλο βλέπει μόνο τη βαθμολογία Elo.')];
     if (!c) return [empty('Δεν υπάρχουν αρκετά δεδομένα για κάρτες σε αυτό το πρωτάθλημα.')];
     const hn = m.homeName;
     const an = m.awayName;

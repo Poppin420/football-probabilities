@@ -7,16 +7,18 @@
 // inserted with textContent only (see views.js).
 
 import {
-  STALE_AFTER_HOURS, agoText, ageHours, athensDay, collectEntries, dataBase, dayHeading, formatStamp, groupByDay, parseHash, parseView, safeFile, staleInfo,
+  STALE_AFTER_HOURS, agoText, ageHours, athensDay, collectEntries, dataBase, dayHeading, formatStamp, groupByDay, liveBase, parseHash, parseView, safeFile, staleInfo,
 } from './util.js';
 import { num } from './format.js';
 import { TABS, createViews, makeH, safeId } from './views.js';
 import { createReliability } from './reliability.js';
+import { createLive } from './live.js';
 
 const STORE_LEAGUE = 'fp-league';
 const STORE_THEME = 'fp-theme';
 const FETCH_TIMEOUT_MS = 20000;
 const RELOAD_AFTER_HIDDEN_MS = 30 * 60 * 1000;
+const LIVE_POLL_MS = 60 * 1000;
 
 function safeStorage(win) {
   return {
@@ -50,6 +52,7 @@ export function createApp({
   const h = makeH(doc);
   const views = createViews(h);
   const reliability = createReliability(h);
+  const liveView = createLive(h);
   const $ = (id) => doc.getElementById(id);
 
   const state = {
@@ -64,6 +67,7 @@ export function createApp({
     entries: new Map(), // card key -> entry (for lazy panels)
     hiddenAt: null,
     renderQueued: false,
+    live: { data: null, base: null, timer: null, failed: 0 }, // live.json of the side panel
   };
 
   // ---------------------------------------------------------------- data --
@@ -362,9 +366,51 @@ export function createApp({
     $('status').textContent = 'Αναφορά αξιοπιστίας';
   }
 
+  // ------------------------------------------------------------ live panel --
+  function liveLookup(code, id) {
+    const rec = code ? state.leagues.get(code) : null;
+    return rec?.status === 'ok' ? rec.data.matches.find((m) => m.id === id) || null : null;
+  }
+
+  function renderLive() {
+    const panel = $('live');
+    if (!panel) return;
+    const data = state.live.data;
+    liveView.render(panel, data, liveLookup, { stale: state.live.failed >= 3 });
+    if ($('foot-live')) $('foot-live').hidden = !data;
+  }
+
+  async function pollLive() {
+    const base = state.live.base;
+    if (!base || doc.visibilityState === 'hidden') return;
+    try {
+      const minute = Math.floor(nowFn().getTime() / 60000);
+      const res = await fetchFn(`${base}/live.json?t=${minute}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data || data.schema !== 1 || !Array.isArray(data.matches)) throw new Error('format');
+      state.live.data = data;
+      state.live.failed = 0;
+      // the forecasts of the matches shown come from the league files (loaded on demand)
+      for (const m of data.matches) if (m.code && leagueMeta(m.code)) ensureLeague(m.code);
+    } catch {
+      state.live.failed++;
+      if (state.live.failed >= 10) state.live.data = null; // a branch that does not exist or stays down: hide the panel
+    }
+    renderLive();
+  }
+
+  function startLive() {
+    state.live.base = liveBase(config);
+    if (!state.live.base || state.live.timer) return;
+    pollLive();
+    state.live.timer = win.setInterval(pollLive, LIVE_POLL_MS);
+  }
+
   function renderMain() {
     state.renderQueued = false;
     if (!state.index) return;
+    renderLive();
     if (state.view === 'reliability') return renderReliability();
     const now = nowFn();
     const codes = shownCodes();
@@ -610,6 +656,7 @@ export function createApp({
       $('credit-elo-check').hidden = !ok;
       $('credit-elo-check').replaceChildren(...(ok ? [` (σύγκριση με το `, h('a', { href: 'http://clubelo.com/', target: '_blank', rel: 'noopener noreferrer' }, 'clubelo.com'), `: συσχέτιση ${num(check.correlation, 2)} σε ${check.n} ομάδες)`] : []));
     }
+    if ($('foot-el')) $('foot-el').hidden = !state.index.leagues.some((l) => l && l.code === 'EL' && l.status !== 'error');
     if ($('foot-cl')) $('foot-cl').hidden = !state.index.leagues.some((l) => l && l.eloOnly);
     const warnings = Array.isArray(state.index.warnings) ? state.index.warnings.filter((w) => w && w.message) : [];
     const box = $('warnings');
@@ -686,6 +733,7 @@ export function createApp({
     if (doc.visibilityState === 'hidden') {
       state.hiddenAt = Date.now();
     } else if (state.index) {
+      if (state.live.base) pollLive();
       // A page left open for hours: hide matches that started and refresh the data.
       if (state.hiddenAt && Date.now() - state.hiddenAt > RELOAD_AFTER_HIDDEN_MS) reloadAll();
       else renderMain();
@@ -711,6 +759,7 @@ export function createApp({
     if (!base.ok) return showFatal(configProblem(base.reason));
     state.base = base.base;
     await loadIndex();
+    startLive();
   }
 
   return { start, state, select, setView, reloadAll, renderMain };

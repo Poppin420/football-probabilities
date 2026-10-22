@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, currentTime, eloPoolLeagues, isoDate, seasonStartYear } from '../src/config.js';
 import { createFdOrgClient, sampleOf, parseFixtures } from '../src/sources/footballDataOrg.js';
+import { createRapidEuropaClient } from '../src/sources/rapidEuropa.js';
 import { fetchSeasonCsv } from '../src/sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../src/sources/clubElo.js';
 import { FALLBACK_MODEL, listModels, modelFromEnv } from '../src/sources/groq.js';
@@ -94,6 +95,47 @@ if (!token) {
   }
 
   if (wantsCl) await checkChampionsLeague(client, year);
+  if (!only || only.includes('EL')) await checkEuropaLeague(client, year);
+}
+
+/** Europa League: optional. Its source is a RapidAPI listing (free plan: 500 calls a month): this check uses 2 calls. */
+async function checkEuropaLeague(_client, year) {
+  section('Europa League (RapidAPI, optional)');
+  if (!process.env.RAPIDAPI_KEY) {
+    record('Europa League key', 'SKIP', 'RAPIDAPI_KEY is not set: the Europa League stays off (steps in SETUP.md, section "Europa League")');
+    return;
+  }
+  let rapid;
+  try {
+    rapid = createRapidEuropaClient({ key: process.env.RAPIDAPI_KEY });
+  } catch (err) {
+    record('Europa League key', 'WARN', short(err));
+    return;
+  }
+  const quota = () => (rapid.state.remaining !== null ? `${rapid.state.remaining}${rapid.state.limit !== null ? ` of ${rapid.state.limit}` : ''} calls left` : 'calls left: not reported');
+  try {
+    const week = await rapid.fixtures('EL', { now, horizonDays: 14 });
+    const next = week.fixtures[0];
+    record('fixtures EL (next 14 days)', week.fixtures.length > 0 ? 'PASS' : 'WARN', week.fixtures.length > 0
+      ? `${week.fixtures.length} fixtures, next ${next.kickoff} ${next.home.name} - ${next.away.name}${next.stage ? ` (${next.stage})` : ''} | ${quota()}`
+      : `no fixtures in the next 14 days (normal between match weeks; if it stays so on a match week, the source does not have this season) | ${quota()}`);
+    if (next) console.log(`   sample: ${sampleOf(next)}`);
+  } catch (err) {
+    record('fixtures EL (next 14 days)', 'WARN', `${short(err)} - the daily run then skips the Europa League (nothing breaks)`);
+    return;
+  }
+  try {
+    const res = await rapid.results('EL', year);
+    if (res.restricted) {
+      record(`results EL ${year}`, 'WARN', `${res.reason}: no finished matches of this season`);
+    } else {
+      const usable = res.results.filter((r) => r.x !== null).length;
+      record(`results EL ${year}`, res.results.length > 0 ? 'PASS' : 'WARN', `${res.results.length} finished matches, 90-minute score used on ${usable} (knockout rounds are not used: the source gives one score only) | ${quota()}`);
+      if (res.results[0]) console.log(`   sample: ${sampleOf(res.results[0])}`);
+    }
+  } catch (err) {
+    record(`results EL ${year}`, 'WARN', short(err));
+  }
 }
 
 /** Champions League (Phase 3): fixtures, finished matches of two seasons (the Elo-only model needs their 90-minute scores), clubs. */

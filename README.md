@@ -84,6 +84,23 @@ G  = 1 (goal difference <= 1), 1.5 (2), (11 + N) / 8 (N >= 3)
   `elo.check`) and the weekly run repeats the Elo-only proxy back-test with ClubElo's ratings (`report.json` → `eloOnly.alt`),
   with a non-fatal warning `clubelo-better` if they are clearly better.
 
+### Second tiers and the lab (Phase 3.2)
+
+`LEAGUES` also lists League One (E2), 2. Bundesliga (D2), Serie B (I2), La Liga 2 (SP2) and Ligue 2 (F2) with `tier: 2`.
+They are only results: they join the own-Elo history when the repository variable `ELO_TIERS` is `on` (default off; no formula
+changes, so that promoted clubs enter with a real rating). `scripts/lab-elo.mjs` (workflow `lab.yml`, manual, read-only, publishes
+nothing) back-tests the Championship without Elo, with our Elo and with our Elo + tiers, splits the matches into those with
+a newly promoted club and the rest, counts the promoted clubs that have a rating on matchday 1, and prints an in-sample ceiling.
+
+### Europa League (Phase 3.3)
+
+`EL` is a second Elo-only competition (`optional: true`, `source: 'rapid'`). football-data.org's free plan does not have it and
+the API-Football free key cannot see the current season, so `src/sources/rapidEuropa.js` reads the RapidAPI listing
+"UEFA Europa League" (free plan: 500 calls a month, secret `RAPIDAPI_KEY`; no retries, no 429 waiting). Fixtures: one call per
+refresh; results: cached (20 h this season, 30 days last season). Knockout-round scores are not used (one score only). Without the
+key, or when the source fails, the run logs it, adds the warning `optional-unavailable` and publishes no tab (a previously published
+`EL.json` is kept stale). `scripts/check-sources.mjs` probes it (2 calls). Its finished matches also feed our own Elo.
+
 ## API-Football (optional extras)
 
 Only referees and injuries, never probabilities. Header `x-apisports-key`; the API answers HTTP 200 even on errors,

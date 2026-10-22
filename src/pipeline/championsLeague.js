@@ -26,7 +26,7 @@ export const CL_SCORERS_NOTE =
   'Λίστα: παίκτες με τουλάχιστον ένα γκολ στο Champions League φέτος.';
 export const CL_NOTE_OWN =
   'Στο Champions League οι ομάδες δεν έχουν κοινό ιστορικό, οπότε το μοντέλο χρησιμοποιεί μόνο τη διαφορά βαθμολογίας Elo, που υπολογίζουμε οι ίδιοι από τα αποτελέσματα των τελευταίων ετών (χωρίς εξωτερική πηγή). ' +
-  'Οι διαφορές ανάμεσα σε χώρες είναι λιγότερο αξιόπιστες, γιατί συνδέονται μόνο μέσω των αγώνων Champions League. ' +
+  'Οι διαφορές ανάμεσα σε χώρες είναι λιγότερο αξιόπιστες, γιατί συνδέονται μόνο μέσω των ευρωπαϊκών αγώνων (Champions League, Europa League). ' +
   'Δεν δείχνει φόρμα, απουσίες ή στυλ παιχνιδιού, και δεν υπάρχουν κόρνερ και κάρτες. Η βεβαιότητά του είναι χαμηλότερη από των εγχώριων λιγκών.';
 export const CL_NOTE =
   'Στο Champions League οι ομάδες δεν έχουν κοινό ιστορικό, οπότε το μοντέλο χρησιμοποιεί μόνο τη διαφορά βαθμολογίας Elo (clubelo.com). ' +
@@ -124,7 +124,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
     warnings.push({
       league: league.code,
       code: 'cup-results-unmatched',
-      message: `Champions League: ${cupUnmatched} παλιά αποτελέσματα δεν αντιστοιχίστηκαν σε ομάδες της βαθμολογίας Elo και δεν μετρούν (έλεγξε το aliases.json).`,
+      message: `${league.name}: ${cupUnmatched} παλιά αποτελέσματα δεν αντιστοιχίστηκαν σε ομάδες της βαθμολογίας Elo και δεν μετρούν (έλεγξε το aliases.json).`,
     });
   }
 
@@ -247,7 +247,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
     warnings.push({
       league: league.code,
       code: 'lambda-extreme',
-      message: `Champions League: αναμενόμενα γκολ έως ${lamRange.max.toFixed(2)} - ασυνήθιστα υψηλό, έλεγξε τα δεδομένα Elo.`,
+      message: `${league.name}: αναμενόμενα γκολ έως ${lamRange.max.toFixed(2)} - ασυνήθιστα υψηλό, έλεγξε τα δεδομένα Elo.`,
     });
   }
   if (!halfShare?.ok) {
@@ -287,7 +287,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
     },
     teams: teamsOut,
     matches,
-    notes: { scorers: CL_SCORERS_NOTE, scorersAbsences: SCORERS_ABSENCES_NOTE, eloOnly: elo.source === 'own' ? CL_NOTE_OWN : CL_NOTE },
+    notes: { scorers: CL_SCORERS_NOTE.replace('στο Champions League', `στο ${league.name}`), scorersAbsences: SCORERS_ABSENCES_NOTE, eloOnly: (elo.source === 'own' ? CL_NOTE_OWN : CL_NOTE).replace(/^Στο Champions League/, `Στο ${league.name}`) },
   };
 
   const summary = {

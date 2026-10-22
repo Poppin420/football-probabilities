@@ -161,6 +161,17 @@ export async function fetchPrevious(settings) {
 /** Refuse to publish anything that looks incomplete: a broken publish would replace good data. */
 export function checkOutput(settings) {
   const { outDir, partialRun } = settings;
+  if (settings.branch === 'live') {
+    // the tiny branch of the live panel: one file, nothing else to protect
+    let live;
+    try {
+      live = JSON.parse(fs.readFileSync(path.join(outDir, 'live.json'), 'utf8'));
+    } catch {
+      throw new Error(`${path.basename(outDir)}/live.json is missing or is not valid JSON: nothing was published.`);
+    }
+    if (live?.schema !== 1 || !Array.isArray(live.matches)) throw new Error('live.json has an unexpected shape: nothing was published.');
+    return { generatedAt: live.updatedAt };
+  }
   if (partialRun) {
     throw new Error('FP_ONLY is set: a partial run must never be published, it would delete the other leagues.');
   }
