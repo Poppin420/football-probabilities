@@ -1,0 +1,57 @@
+# Live panel: every 5 minutes in the afternoon / evening (UTC) one request to football-data.org lists the matches
+# that are being played, and a tiny file live.json goes to its own branch "live" (the page reads it). Nothing is
+# published when nothing changed. GitHub may delay scheduled runs by some minutes, and the free plan shows scores
+# with a delay, so the panel is "almost live".
+name: Live αγώνες
+
+on:
+  schedule:
+    - cron: '*/5 9-23 * * *'
+  workflow_dispatch:
+
+# A newer run makes an older waiting one pointless.
+concurrency:
+  group: live-branch
+  cancel-in-progress: true
+
+permissions:
+  contents: write # needed to push the branch "live"
+
+jobs:
+  live:
+    name: Live αγώνες
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Λήψη του κώδικα
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Εγκατάσταση Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Προηγούμενο live.json
+        run: node scripts/data-branch.mjs fetch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DATA_BRANCH: live
+          PREV_DIR: live-prev
+
+      - name: Αγώνες που παίζονται
+        id: live
+        run: node scripts/live.mjs
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          PREV_DIR: live-prev
+          OUT_DIR: live-out
+
+      - name: Δημοσίευση στο branch live
+        if: ${{ steps.live.outputs.publish == 'true' }}
+        run: node scripts/data-branch.mjs publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DATA_BRANCH: live
+          OUT_DIR: live-out
