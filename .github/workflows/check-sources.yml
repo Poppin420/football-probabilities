@@ -20,6 +20,8 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
       ELO_SOURCE: ${{ vars.ELO_SOURCE }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }} # optional: the Europa League source (RapidAPI); without it the Europa League is skipped
+      ELO_TIERS: ${{ vars.ELO_TIERS }}
     steps:
       - name: Λήψη του κώδικα
         uses: actions/checkout@v6
