@@ -16,10 +16,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { CURRENT_PHASE, LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, cupLeagues, currentTime, dayNumber, domesticLeagues, eloPoolLeagues, isoDate, seasonStartYear } from '../config.js';
+import { CURRENT_PHASE, EXTRA_ELO_LEAGUES, LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, cupLeagues, currentTime, dayNumber, domesticLeagues, eloPoolLeagues, isoDate, seasonStartYear } from '../config.js';
 import { createFdOrgClient, sampleOf } from '../sources/footballDataOrg.js';
 import { createRapidEuropaClient } from '../sources/rapidEuropa.js';
-import { fetchSeasonCsv } from '../sources/footballDataCoUk.js';
+import { fetchNewCsv, fetchSeasonCsv } from '../sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../sources/clubElo.js';
 import { createResolver } from '../sources/names.js';
 import { loadAliases } from '../sources/aliases.js';
@@ -176,6 +176,10 @@ export async function runRefresh({
     for (const league of eloPoolLeagues()) {
       const csv = fetched.get(league.code)?.csvAll ?? extraCsv.get(league.code);
       if (csv) leagueRows.push({ league, rows: [...csv.bySeason.values()].flat() });
+    }
+    for (const league of EXTRA_ELO_LEAGUES) {
+      const rows = await loadExtraLeague({ league, cache, now, logger, warnings, fromDay: Date.UTC(seasonStartYear(now) - OWN_ELO.completedSeasons, 6, 1) / 86400000 });
+      if (rows) leagueRows.push({ league, rows });
     }
     const cupParts = [...cupHistory, ...cups.flatMap((c) => fetched.get(c.code)?.cupResults ?? [])];
     if (leagueRows.some((l) => l.rows.length > 0)) {
@@ -453,6 +457,36 @@ async function loadCsv({ league, seasons, cache, now, sources, logSample, logger
   }
   if (sources.footballDataCoUk.status === 'unknown') sources.footballDataCoUk = { status: 'ok', detail: '' };
   return { bySeason, staleParts };
+}
+
+/**
+ * Results of one extra country (own Elo only). One download per day; when it fails the copy of the previous run is used;
+ * without any copy the country is left out with a warning (the run never fails because of it).
+ */
+async function loadExtraLeague({ league, cache, now, logger, warnings, fromDay }) {
+  const name = `csvnew-${league.file}`;
+  const cached = cache.peek(name);
+  if (cached && ageHours(cached.fetchedAt, now) < CUP_RESULTS_TTL_H) {
+    cache.put(name, cached);
+    return cached.rows;
+  }
+  try {
+    const res = await fetchNewCsv(league.file);
+    if (res.missing) throw new Error('το αρχείο δεν υπάρχει (404)');
+    const rows = res.rows.filter((r) => r.t >= fromDay);
+    if (rows.length === 0) throw new Error(`δεν βρέθηκαν αποτελέσματα (${res.total} γραμμές, ${res.skipped} δεν διαβάστηκαν)`);
+    cache.put(name, { fetchedAt: now.toISOString(), rows });
+    return rows;
+  } catch (err) {
+    if (cached) {
+      logger.error(`[own Elo] ${league.code}: χρησιμοποιείται το αντίγραφο της ${cached.fetchedAt.slice(0, 10)}: ${err.message}`);
+      cache.put(name, cached);
+      return cached.rows;
+    }
+    warnings.push({ league: league.code, code: 'extra-league-unavailable', message: `Δικό μας Elo: οι αγώνες ${league.country} (${league.file}) δεν διαβάστηκαν: ${err.message}. Οι ομάδες της χώρας έχουν λιγότερα δεδομένα.` });
+    logger.error(`[own Elo] ${league.code}: ${err.message}`);
+    return null;
+  }
 }
 
 async function loadScorers({ client, league, seasonYear, cache, now, logSample, logger, warnings }) {

@@ -10,6 +10,7 @@ export const BASES = {
   elo: env.ELO_BASE || 'http://api.clubelo.com',
   groq: env.GROQ_BASE || 'https://api.groq.com/openai/v1',
   apiFootball: env.API_FOOTBALL_BASE || 'https://v3.football.api-sports.io',
+  csvNew: env.FD_CSV_NEW_BASE || (env.FD_CSV_BASE ? env.FD_CSV_BASE.replace(/\/mmz4281$/, '/new') : 'https://www.football-data.co.uk/new'),
   rapidEuropa: env.RAPID_EL_BASE || 'https://uefa-europa-league.p.rapidapi.com',
 };
 
@@ -45,6 +46,18 @@ export const LEAGUES = [
   { code: 'SP2', div: 'SP2', name: 'La Liga 2', country: 'Ισπανία', eloCountry: 'ESP', eloLevel: 2, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
   { code: 'F2', div: 'F2', name: 'Ligue 2', country: 'Γαλλία', eloCountry: 'FRA', eloLevel: 2, phase: 9, enabled: false, tier: 2, reason: 'results only (rates promoted clubs)' },
 ];
+
+/**
+ * Further countries whose clubs play in the Europa League. Only their RESULTS are read (football-data.co.uk "new leagues"
+ * files, one CSV per country with every season) to rate their clubs in our own Elo. They have no page of their own.
+ */
+export const EXTRA_ELO_LEAGUES = Object.freeze([
+  { code: 'AUT', div: 'AUT', file: 'AUT', name: 'Bundesliga (Αυστρία)', country: 'Αυστρία', eloCountry: 'AUT', eloLevel: 1 },
+  { code: 'DNK', div: 'DNK', file: 'DNK', name: 'Superliga (Δανία)', country: 'Δανία', eloCountry: 'DEN', eloLevel: 1 },
+  { code: 'SWZ', div: 'SWZ', file: 'SWZ', name: 'Super League (Ελβετία)', country: 'Ελβετία', eloCountry: 'SUI', eloLevel: 1 },
+  { code: 'NOR', div: 'NOR', file: 'NOR', name: 'Eliteserien (Νορβηγία)', country: 'Νορβηγία', eloCountry: 'NOR', eloLevel: 1 },
+  { code: 'POL', div: 'POL', file: 'POL', name: 'Ekstraklasa (Πολωνία)', country: 'Πολωνία', eloCountry: 'POL', eloLevel: 1 },
+]);
 
 export const CURRENT_PHASE = 3;
 

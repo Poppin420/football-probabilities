@@ -7,10 +7,10 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, currentTime, eloPoolLeagues, isoDate, seasonStartYear } from '../src/config.js';
+import { EXTRA_ELO_LEAGUES, LEAGUES, MODEL, OWN_ELO, RATE, csvSeasons, currentTime, eloPoolLeagues, isoDate, seasonStartYear } from '../src/config.js';
 import { createFdOrgClient, sampleOf, parseFixtures } from '../src/sources/footballDataOrg.js';
 import { createRapidEuropaClient } from '../src/sources/rapidEuropa.js';
-import { fetchSeasonCsv } from '../src/sources/footballDataCoUk.js';
+import { fetchNewCsv, fetchSeasonCsv } from '../src/sources/footballDataCoUk.js';
 import { fetchEloSnapshot } from '../src/sources/clubElo.js';
 import { FALLBACK_MODEL, listModels, modelFromEnv } from '../src/sources/groq.js';
 import { checkAccess, createApiFootballClient, normalizeUsage, parseApiFixtures } from '../src/sources/apiFootball.js';
@@ -96,9 +96,27 @@ if (!token) {
 
   if (wantsCl) await checkChampionsLeague(client, year);
   if (!only || only.includes('EL')) await checkEuropaLeague(client, year);
+  if (!only || only.includes('EL')) await checkExtraLeagues();
 }
 
 /** Europa League: optional. Its source is a RapidAPI listing (free plan: 500 calls a month): this check uses 2 calls. */
+async function checkExtraLeagues() {
+  section('Αποτελέσματα άλλων χωρών για το Elo (football-data.co.uk, χωρίς κλειδί)');
+  for (const l of EXTRA_ELO_LEAGUES) {
+    try {
+      const res = await fetchNewCsv(l.file);
+      if (res.missing) {
+        record(`Elo ${l.file}`, 'WARN', 'το αρχείο δεν υπάρχει (404): η χώρα μένει εκτός Elo, τίποτα δεν χαλάει');
+        continue;
+      }
+      const last = res.rows.at(-1);
+      record(`Elo ${l.file}`, res.rows.length > 100 ? 'PASS' : 'WARN', `${res.rows.length} αγώνες με αποτέλεσμα (${res.total} γραμμές, ${res.skipped} δεν διαβάστηκαν)${last ? `, τελευταίος ${last.date} ${last.home} - ${last.away}` : ''}`);
+    } catch (err) {
+      record(`Elo ${l.file}`, 'WARN', `${short(err)} (η χώρα μένει εκτός Elo, τίποτα δεν χαλάει)`);
+    }
+  }
+}
+
 async function checkEuropaLeague(_client, year) {
   section('Europa League (RapidAPI, optional)');
   if (!process.env.RAPIDAPI_KEY) {

@@ -143,3 +143,55 @@ export async function fetchSeasonCsv(div, code, opts = {}) {
     throw err;
   }
 }
+
+// ---------------------------------------------------------------------------
+// "New leagues" files (https://www.football-data.co.uk/new/AUT.csv ...): one file per country, every season, results only.
+// The header is looked up by name (Date, Home, Away, HG, AG; Season, League and the odds columns are ignored), so a
+// reordered file still works and an unknown layout is reported instead of read blindly. Dates are dd/mm/yyyy.
+
+const NEW_REQUIRED = ['date', 'home', 'away', 'hg', 'ag'];
+
+export function parseNewCsv(text, { file = '' } = {}) {
+  const table = parseCsv(text);
+  if (table.length === 0) return { rows: [], total: 0, noResult: 0, skipped: 0 };
+  const col = headerIndex(table[0]);
+  const missing = NEW_REQUIRED.filter((c) => col(c) < 0);
+  if (missing.length > 0) {
+    throw new SourceFormatError(`football-data.co.uk new/${file}: header lacks ${missing.join(', ')} (header: ${table[0].slice(0, 12).join('|')})`);
+  }
+  const idx = { date: col('date'), home: col('home'), away: col('away'), hg: col('hg'), ag: col('ag') };
+  const rows = [];
+  let noResult = 0;
+  let skipped = 0;
+  for (let k = 1; k < table.length; k++) {
+    const r = table[k];
+    const iso = parseCsvDate(r[idx.date]);
+    const home = (r[idx.home] || '').trim();
+    const away = (r[idx.away] || '').trim();
+    if (!iso || !home || !away) {
+      skipped++;
+      continue;
+    }
+    const x = int(r[idx.hg]);
+    const y = int(r[idx.ag]);
+    if (x === null || y === null) {
+      noResult++;
+      continue;
+    }
+    rows.push({ date: iso, t: dayNumberFromIso(iso), home, away, x, y });
+  }
+  return { rows, total: table.length - 1, noResult, skipped };
+}
+
+/** Download and parse one "new leagues" country file. A 404 means the file does not exist. */
+export async function fetchNewCsv(file, opts = {}) {
+  const url = `${opts.baseUrl || BASES.csvNew}/${file}.csv`;
+  try {
+    const { body } = await httpGet(url, { as: 'buffer', retries: 2, fetchImpl: opts.fetchImpl, sleepFn: opts.sleepFn });
+    const text = new TextDecoder('latin1').decode(body);
+    return { url, missing: false, ...parseNewCsv(text, { file }) };
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) return { url, missing: true, rows: [], total: 0, noResult: 0, skipped: 0 };
+    throw err;
+  }
+}

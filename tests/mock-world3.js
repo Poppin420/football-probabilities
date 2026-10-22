@@ -273,6 +273,12 @@ export async function startMockServer3(world3, initial = {}) {
       if (!text) return answer(404, 'not found', 'text/plain');
       return answer(200, Buffer.from(text, 'latin1'), 'text/csv');
     }
+    if ((m = /^\/new\/([A-Z]+)\.csv$/.exec(p))) {
+      state.newHits = (state.newHits || 0) + 1;
+      const text = behaviour.newCsv?.[m[1]];
+      if (!text) return answer(404, 'not found', 'text/plain');
+      return answer(200, Buffer.from(text, 'latin1'), 'text/csv');
+    }
     if (p === '/rapid/matches') {
       // the Europa League source (RapidAPI listing): the Champions League data under another name
       if (req.headers['x-rapidapi-key'] !== 'rapid-test' || !req.headers['x-rapidapi-host']) return answer(403, { message: 'You are not subscribed to this API.' });
