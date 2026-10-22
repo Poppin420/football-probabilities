@@ -188,8 +188,8 @@ test('goals tab: first-half goals with the share of goals of the league', { skip
 test('Champions League: corners and cards are explained, not faked; the Premier League keeps both', { skip }, async () => {
   const { doc } = await boot();
   const cl = cardOf(doc, 'Arsenal', 'Amber Wolves');
-  assert.match(text(openTab(cl, 'Κόρνερ')), /Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κόρνερ/);
-  assert.match(text(openTab(cl, 'Κάρτες')), /Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κάρτες/);
+  assert.match(text(openTab(cl, 'Κόρνερ')), /Δεν υπάρχουν κόρνερ για αυτόν τον αγώνα/);
+  assert.match(text(openTab(cl, 'Κάρτες')), /Δεν υπάρχουν κάρτες για αυτόν τον αγώνα/);
   const pl = cardOf(doc, 'Arsenal', 'Chelsea');
   assert.match(text(openTab(pl, 'Κόρνερ')), /Αναμενόμενα κόρνερ/);
   assert.match(text(openTab(pl, 'Κάρτες')), /Αναμενόμενες κάρτες/);
@@ -396,12 +396,14 @@ test('live panel: a match being played shows the score, the forecast and whether
   assert.match(text(d.doc.getElementById('live')), /δεν βγήκε ✗/);
 });
 
-test('live panel: no file / nothing playing keeps the panel hidden and the page working', { skip }, async () => {
+test('live panel: says so when the file does not exist yet or nothing is playing, and the page keeps working', { skip }, async () => {
   const none = await boot();
-  assert.equal(none.doc.getElementById('live').hidden, true);
+  assert.equal(none.doc.getElementById('live').hidden, false);
+  assert.match(text(none.doc.getElementById('live')), /δεν υπάρχουν δεδομένα ακόμα/);
   assert.ok(cards(none.doc).length > 0);
   const empty = await boot({ files: { ...clone(FILES), 'live.json': { schema: 1, updatedAt: '2026-10-18T10:05:00Z', matches: [] } } });
-  assert.equal(empty.doc.getElementById('live').hidden, true);
+  assert.equal(empty.doc.getElementById('live').hidden, false);
+  assert.match(text(empty.doc.getElementById('live')), /κανένας αγώνας αυτή τη στιγμή/);
   const unknown = await boot({ files: { ...clone(FILES), 'live.json': { schema: 1, updatedAt: '2026-10-18T10:05:00Z', matches: [{ id: 1, code: 'XX', competition: 'Other', state: 'live', minute: 10, kickoff: '2026-10-18T09:00:00Z', home: 'A', away: 'B', score: { home: 0, away: 0 } }] } } });
   assert.match(text(unknown.doc.getElementById('live')), /Δεν υπάρχει πρόβλεψη/);
 });

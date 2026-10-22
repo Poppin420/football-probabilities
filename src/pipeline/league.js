@@ -431,7 +431,7 @@ export function buildLeague({
       message: `Κόρνερ ${league.code}: |συσχέτιση| κατάλοιπων ${cornersModel.corrResid.toFixed(3)} > 0,1 - η υπόθεση ανεξαρτησίας χαλαρώνει.`,
     });
   }
-  return { json, summary, warnings };
+  return { json, summary, warnings, countModels: { code: league.code, corners: cornersModel, yellow: yellowModel, red: redModel } };
 }
 
 function eloSummary(info, wanted) {

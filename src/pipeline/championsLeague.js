@@ -17,6 +17,7 @@ import { scoreMatrix } from '../model/poisson.js';
 import { goalMarkets } from '../model/markets.js';
 import { halfTimeMarkets, htftBlock } from '../model/htft.js';
 import { ELO_DIV, SHRINK_MATCHES, eloOnlyMeans, fitCupIntercept, fitEloOnly, fitEloOnlyRho, shrinkIntercept } from '../model/eloOnly.js';
+import { createEuroCounts } from '../model/euroCounts.js';
 import { buildAnalysis } from '../model/template.js';
 import { createExtrasMatcher } from './extras.js';
 import { SCORERS_ABSENCES_NOTE, buildMatchScorers, prepareScorers } from './scorerSetup.js';
@@ -58,6 +59,7 @@ export function clubsByKey(clubs, resolver) {
  * @param {{current?:object, previous?:object}|null} input.scorers
  * @param {{clubs:object[], date:string}} input.elo          today's ClubElo snapshot (all clubs)
  * @param {(day:number) => Map<string,number>|null} input.eloAt   monthly snapshots, all clubs, by resolved key
+ * @param {object[]} [input.countModels]   domestic corner / card models of the leagues ({code, corners, yellow, red}); used for the cup corners and cards
  * @param {{x:number,y:number,d:number,w:number}[]} input.domesticRows   rows of the pooled regression (eloOnlyData.js)
  * @param {{ok:boolean,s?:number,n:number,reason?:string}} input.halfShare  pooled first-half share of the domestic leagues
  * @param {object} input.resolver
@@ -65,7 +67,7 @@ export function clubsByKey(clubs, resolver) {
  * @param {object|null} [input.extras]   API-Football entry of this league (extras.js)
  * @returns {{json:object, summary:object, warnings:object[]}}
  */
-export function buildChampionsLeague({ league, fixtures, results, scorers = null, elo, eloAt, domesticRows, halfShare, resolver, now, extras = null }) {
+export function buildChampionsLeague({ league, fixtures, results, scorers = null, elo, eloAt, domesticRows, halfShare, resolver, now, extras = null, countModels = [] }) {
   const warnings = [];
   const tNow = dayNumber(now);
   const xi = MODEL.xi;
@@ -188,6 +190,7 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
   // 6. Per-match output --------------------------------------------------------------------------
   const extrasMatcher = createExtrasMatcher({ extras, resolver, universe });
   const extrasMissing = [];
+  const euro = createEuroCounts(countModels);
   const teamsOut = {};
   const matches = [];
   const lamRange = { min: Infinity, max: -Infinity };
@@ -226,8 +229,8 @@ export function buildChampionsLeague({ league, fixtures, results, scorers = null
       model: { lam, mu, rho: rhoFit.rho },
       elo: { home: Math.round(eh), away: Math.round(ea) },
       goals,
-      corners: null,
-      cards: null,
+      corners: euro.corners(home, away, { neutral }),
+      cards: euro.cards(home, away, { neutral }),
       scorers: scorersOut,
       htft,
       ranges: null,

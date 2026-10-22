@@ -220,14 +220,17 @@ export function createViews(h) {
 
   const closestLine = (list, target) => list.reduce((best, t) => (Math.abs(t.line - target) < Math.abs(best.line - target) ? t : best), list[0]);
 
+  const EURO_COUNT_NOTE = 'Εκτίμηση: οι ομάδες δεν έχουν κοινό ιστορικό, γι’ αυτό το μοντέλο συνδυάζει τα στατιστικά της καθεμιάς από το δικό της πρωτάθλημα. Δεν μπορεί να ελεγχθεί σε ευρωπαϊκούς αγώνες, άρα είναι λιγότερο βέβαιο· ο διαιτητής δεν λαμβάνεται υπόψη.';
+
   function cornersTab({ m }) {
     const c = m.corners;
-    if (!c && m.flags?.eloOnly) return [empty('Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κόρνερ: οι ομάδες δεν έχουν κοινό ιστορικό και το μοντέλο βλέπει μόνο τη βαθμολογία Elo.')];
+    if (!c && m.flags?.eloOnly) return [empty('Δεν υπάρχουν κόρνερ για αυτόν τον αγώνα: χρειάζονται και οι δύο ομάδες να έχουν αρκετούς αγώνες σε εγχώριο πρωτάθλημα που καλύπτουμε.')];
     if (!c) return [empty('Δεν υπάρχουν αρκετά δεδομένα για κόρνερ σε αυτό το πρωτάθλημα.')];
     const hn = m.homeName;
     const an = m.awayName;
     const mid = closestLine(c.totals, c.mean.total);
     return [
+      c.estimate ? note(EURO_COUNT_NOTE) : null,
       block('Αναμενόμενα κόρνερ', stats([[hn, num(c.mean.home, 1)], [an, num(c.mean.away, 1)], ['Σύνολο', num(c.mean.total, 1)]])),
       block('Σύνολο κόρνερ (Over / Under)', c.totals.map((t) => overUnder(`${lineText(t.line)} κόρνερ`, t, { strong: t === mid }))),
       block(
@@ -260,13 +263,14 @@ export function createViews(h) {
 
   function cardsTab({ m }) {
     const c = m.cards;
-    if (!c && m.flags?.eloOnly) return [empty('Στις ευρωπαϊκές διοργανώσεις δεν υπάρχουν κάρτες: οι ομάδες δεν έχουν κοινό ιστορικό και το μοντέλο βλέπει μόνο τη βαθμολογία Elo.')];
+    if (!c && m.flags?.eloOnly) return [empty('Δεν υπάρχουν κάρτες για αυτόν τον αγώνα: χρειάζονται και οι δύο ομάδες να έχουν αρκετούς αγώνες σε εγχώριο πρωτάθλημα που καλύπτουμε.')];
     if (!c) return [empty('Δεν υπάρχουν αρκετά δεδομένα για κάρτες σε αυτό το πρωτάθλημα.')];
     const hn = m.homeName;
     const an = m.awayName;
     const mid = closestLine(c.totals, c.mean.total);
     const f = c.refereeFactor;
     return [
+      c.estimate ? note(EURO_COUNT_NOTE) : null,
       block(
         'Αναμενόμενες κάρτες',
         stats([

@@ -144,3 +144,7 @@ Optional environment variables: `GROQ_API_KEY` (Greek comments), `GROQ_MODEL` (d
 - Elo ratings: computed by the project itself from the match results (no external rating source). [clubelo.com](http://clubelo.com/) is used only for an optional comparison, and is credited in the footer when it is used.
 - Referees and absences (optional): [API-Football](https://www.api-football.com/).
 - Greek comment text (optional): [Groq](https://groq.com/) API, phrasing only.
+
+## Κόρνερ και κάρτες στις ευρωπαϊκές διοργανώσεις
+
+Στο Champions League και στο Europa League τα κόρνερ και οι κάρτες υπολογίζονται από τα **εγχώρια** μοντέλα κάθε ομάδας (`src/model/euroCounts.js`): επίπεδο και έδρα ως μέσος όρος των δύο πρωταθλημάτων, επίθεση/άμυνα από το δικό του πρωτάθλημα κάθε συλλόγου, κόκκινες από τον μέσο ρυθμό των δύο πρωταθλημάτων επί τον συντελεστή της κάθε ομάδας. Στον τελικό δεν υπάρχει έδρα. Σημαίνονται ως «εκτίμηση»: δεν ελέγχονται σε ευρωπαϊκούς αγώνες, δεν υπολογίζεται η διαφορά επιπέδου μεταξύ πρωταθλημάτων και ο διαιτητής δεν μετράει. Αν μια ομάδα δεν ανήκει σε πρωτάθλημα που καλύπτουμε (ή έχει λίγους αγώνες), η καρτέλα εξηγεί ότι δεν υπάρχουν στοιχεία.

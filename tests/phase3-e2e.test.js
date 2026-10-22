@@ -152,8 +152,12 @@ test('CL matches: the formulas of the model, no corners / cards / ranges, the ba
 
   for (const m of cl.matches) {
     assert.deepEqual(m.flags, { eloOnly: true });
-    assert.equal(m.corners, null);
-    assert.equal(m.cards, null);
+    // corners / cards: only an estimate from the two clubs' domestic models, or nothing at all
+    for (const c of [m.corners, m.cards]) {
+      if (c === null) continue;
+      assert.equal(c.estimate, true);
+      assert.ok(Array.isArray(c.basis) && c.basis.length === 2);
+    }
     assert.equal(m.ranges, null);
     const dE = m.elo.home - m.elo.away;
     const lam = Math.exp(e.c + (m.neutral ? 0 : e.eta) + (e.kappa * dE) / 800);

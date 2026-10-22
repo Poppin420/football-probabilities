@@ -116,6 +116,7 @@ export async function runRefresh({
   const keepSeasons = new Set(seasons.map((s) => s.code));
 
   // A. Downloads ------------------------------------------------------------------
+  const countModels = []; // domestic corner / card models, reused for the European cup matches
   const fetched = new Map(); // league code -> { csv, fx, scorers, cupResults } | { error }
   for (const league of domestic) {
     try {
@@ -271,6 +272,7 @@ export async function runRefresh({
         tuneInfo: { source: tuned.source, generatedAt: tune.generatedAt },
         extras: extras.byLeague.get(league.code) ?? null,
       });
+      if (built.countModels) countModels.push(built.countModels);
       built.json.sources = {
         scorers: d.scorers?.current ? { fetchedAt: d.scorers.current.fetchedAt, ageHours: Math.round(ageHours(d.scorers.current.fetchedAt, now)) } : null,
         elo: elo ? { date: elo.date, fetchedAt: elo.fetchedAt, source: own ? 'own' : 'clubelo' } : null,
@@ -309,6 +311,7 @@ export async function runRefresh({
         resolver,
         now,
         extras: extras.byLeague.get(league.code) ?? null,
+        countModels,
       });
       built.json.params.pool = pool.info;
       built.json.sources = {
