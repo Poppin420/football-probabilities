@@ -1,18 +1,19 @@
-# Live panel: every 5 minutes in the afternoon / evening (UTC) one request to football-data.org lists the matches
-# that are being played, and a tiny file live.json goes to its own branch "live" (the page reads it). Nothing is
-# published when nothing changed. GitHub may delay scheduled runs by some minutes, and the free plan shows scores
-# with a delay, so the panel is "almost live".
+# Live panel: every 15 minutes in the afternoon / evening (UTC) one run starts and, during about 10 minutes, asks
+# football-data.org 4 times (every ~200 s) which matches are being played. A tiny file live.json goes to its own
+# branch "live" (the page reads it) whenever something changed. GitHub often delays or skips scheduled runs, so a
+# run that covers several minutes is more reliable than one run every 5 minutes. The free plan shows scores with
+# a delay, so the panel is "almost live".
 name: Live αγώνες
 
 on:
   schedule:
-    - cron: '*/5 9-23 * * *'
+    - cron: '2,17,32,47 9-23 * * *'
   workflow_dispatch:
 
-# A newer run makes an older waiting one pointless.
+# Runs queue one behind the other (the one waiting is replaced by a newer one); a running one is never cut off.
 concurrency:
   group: live-branch
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write # needed to push the branch "live"
@@ -21,7 +22,7 @@ jobs:
   live:
     name: Live αγώνες
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 16
     steps:
       - name: Λήψη του κώδικα
         uses: actions/checkout@v6
@@ -40,18 +41,28 @@ jobs:
           DATA_BRANCH: live
           PREV_DIR: live-prev
 
-      - name: Αγώνες που παίζονται
-        id: live
-        run: node scripts/live.mjs
+      - name: Αγώνες που παίζονται (4 φορές, κάθε ~3 λεπτά)
+        run: |
+          mkdir -p live-prev
+          fails=0
+          for i in 1 2 3 4; do
+            rm -rf live-out
+            if node scripts/live.mjs; then
+              if [ -f live-out/live.json ]; then
+                node scripts/data-branch.mjs publish && cp live-out/live.json live-prev/live.json || fails=$((fails + 1))
+              fi
+            else
+              fails=$((fails + 1))
+            fi
+            if [ "$i" -lt 4 ]; then sleep 200; fi
+          done
+          if [ "$fails" -ge 4 ]; then
+            echo "::error::Το live panel απέτυχε και στις 4 προσπάθειες (δες τα μηνύματα παραπάνω)."
+            exit 1
+          fi
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
-          PREV_DIR: live-prev
-          OUT_DIR: live-out
-
-      - name: Δημοσίευση στο branch live
-        if: ${{ steps.live.outputs.publish == 'true' }}
-        run: node scripts/data-branch.mjs publish
-        env:
           GITHUB_TOKEN: ${{ github.token }}
           DATA_BRANCH: live
+          PREV_DIR: live-prev
           OUT_DIR: live-out
