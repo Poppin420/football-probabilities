@@ -47,9 +47,14 @@ test('euro counts: cards use the mean red rate, unknown / thin clubs give null',
 
 import { createResolver } from '../src/sources/names.js';
 
-test('name matching: a much longer name is not a fuzzy match of a short one (Lillestrom is not Lille)', () => {
+test('name matching: an exact club always beats a look-alike (Lillestrom is Lillestrom once Norway is in the universe, not Lille)', () => {
   const r = createResolver({});
-  const universe = new Set([r.key('Lille'), r.key('Lyon')]);
-  assert.equal(r.match('Lillestrom', universe).key, null);
-  assert.equal(r.match('Lille', universe).key, r.key('Lille'));
+  const withNorway = new Set([r.key('Lille'), r.key('Lyon'), r.key('Lillestrom')]);
+  assert.equal(r.match('Lillestrom', withNorway).key, r.key('Lillestrom'));
+  assert.equal(r.match('Lille', withNorway).key, r.key('Lille'));
+});
+
+test('name matching: a long official name still finds the short CSV name by similarity (Lincoln City FC -> Lincoln)', () => {
+  const r = createResolver({});
+  assert.equal(r.match('Lincoln City FC', new Set([r.key('Lincoln'), r.key('Luton')])).key, r.key('Lincoln'));
 });
