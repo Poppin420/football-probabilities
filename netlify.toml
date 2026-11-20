@@ -1,0 +1,3 @@
+# Generated. This branch only holds data files, never build it.
+[build]
+  ignore = "exit 0"
